@@ -84,8 +84,3 @@ SO 列表的商機編號與 SO 抽屜標題列的「商機 D-xxx」都是連結�
 
 假資料檢查：`node scripts/audit-mock.mjs`，另外接 `scripts/audit-extra.mjs`（項次性質與期間、到期項目與項次及出貨、簽收與附件、流程紀錄、請款、PO、簽核歷程、人員）與 `scripts/audit-dates.mjs`（金額一致、日期順序、SO 編號日期、紀錄日期等於單據日期）。全部通過時輸出「全部對得上」。
 
-## 對外展示（GitHub Pages）
-
-推到 GitHub 的 `main` 分支後，`.github/workflows/deploy.yml` 會自動建置並發布。第一次要在 repo 的 Settings → Pages 把 Source 設成「GitHub Actions」。網址是 `https://<帳號>.github.io/<repo 名稱>/`。
-
-路由用 hash 模式（網址帶 `#`），建置用相對路徑（`vite.config.ts` 的 `base: './'`），所以任何 repo 名稱都能用，子頁重新整理也不會 404。資料都在瀏覽器記憶體裡，每個訪客各自一份，重新整理就回到初始狀態。
