@@ -1,0 +1,609 @@
+:root {
+  --paper: #f3f4f1;
+  --surface: #ffffff;
+  --surface-2: #e9ebe6;
+  --ink: #16211b;
+  --muted: #5b6770;
+  --line: #d6dad4;
+  --line-strong: #9aa39c;
+
+  --teal: #0f5c5a;
+  --teal-ink: #0b4442;
+  --teal-soft: #dcecea;
+  --amber: #b4731c;
+  --amber-soft: #f6e9d2;
+  --red: #b3261e;
+  --red-soft: #f6dcda;
+  --olive: #5c6e36;
+  --olive-soft: #e6ecd8;
+  --slate: #5b6770;
+  --slate-soft: #e4e8ea;
+
+  --font-sans: "IBM Plex Sans", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --radius-s: 3px;
+  --radius-m: 6px;
+  --rail-w: 232px;
+  --topbar-h: 52px;
+
+  /* 左側導航 */
+  --rail-bg: #0b4442;
+  --rail-text: #d7e6e4;
+  --rail-muted: #9fc0bd;
+  --rail-planned: #8fb0ad;
+  --rail-line: rgba(255, 255, 255, 0.12);
+  --rail-hover: rgba(255, 255, 255, 0.08);
+  --rail-active-bg: #ffffff;
+  --rail-active-text: #0b4442;
+}
+
+/* 藍色亮：接近現行系統 */
+:root[data-theme="blue"] {
+  --paper: #f2f4f7;
+  --surface-2: #e6eaef;
+  --ink: #1a2530;
+  --muted: #5a6873;
+  --line: #d3d9e0;
+  --line-strong: #8f9ba6;
+  --teal: #2f5d8a;
+  --teal-ink: #1f3f5e;
+  --teal-soft: #e2eaf2;
+  --el-color-primary-light-3: #5a7fa3;
+  --el-color-primary-light-5: #88a3bf;
+  --el-color-primary-light-7: #b9cadb;
+  --el-color-primary-light-8: #d0dce8;
+  --rail-bg: #1f3f5e;
+  --rail-text: #d8e3ee;
+  --rail-muted: #9db5cc;
+  --rail-planned: #8aa4bd;
+  --rail-active-text: #1f3f5e;
+}
+
+/* 暗色 */
+:root[data-theme="dark"] {
+  --paper: #121a1f;
+  --surface: #1a252c;
+  --surface-2: #22303a;
+  --ink: #e3eae8;
+  --muted: #97a5ad;
+  --line: #2b3a42;
+  --line-strong: #4f626c;
+  --teal: #5fb3ae;
+  --teal-ink: #8fd0cc;
+  --teal-soft: #1f3a3a;
+  --amber: #d9a24a;
+  --amber-soft: #3a2c12;
+  --red: #e07068;
+  --red-soft: #3d1f1d;
+  --olive: #a3b877;
+  --olive-soft: #28321a;
+  --slate: #97a5ad;
+  --slate-soft: #263239;
+  --el-color-primary-light-3: #7cc3bf;
+  --el-color-primary-light-5: #4a8a86;
+  --el-color-primary-light-7: #2d5c59;
+  --el-color-primary-light-8: #244a48;
+  --rail-bg: #0b1619;
+  --rail-text: #c9d6d3;
+  --rail-muted: #7f9399;
+  --rail-planned: #6f8489;
+  --rail-line: rgba(255, 255, 255, 0.1);
+  --rail-hover: rgba(255, 255, 255, 0.06);
+  --rail-active-bg: #1f3a3a;
+  --rail-active-text: #e3eae8;
+  color-scheme: dark;
+}
+
+/* 高對比 */
+:root[data-theme="contrast"] {
+  --paper: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #e8e8e8;
+  --ink: #000000;
+  --muted: #333333;
+  --line: #555555;
+  --line-strong: #000000;
+  --teal: #003f3d;
+  --teal-ink: #002e2c;
+  --teal-soft: #cfe6e4;
+  --amber: #7a4a00;
+  --amber-soft: #ffe9bf;
+  --red: #a40000;
+  --red-soft: #ffd6d6;
+  --olive: #2f4a00;
+  --olive-soft: #dfeec0;
+  --slate: #333333;
+  --slate-soft: #e8e8e8;
+  --el-color-primary-light-3: #2f6866;
+  --el-color-primary-light-5: #5f8f8d;
+  --el-color-primary-light-7: #9fbfbd;
+  --el-color-primary-light-8: #bcd6d4;
+  --rail-bg: #000000;
+  --rail-text: #ffffff;
+  --rail-muted: #cfcfcf;
+  --rail-planned: #bdbdbd;
+  --rail-line: rgba(255, 255, 255, 0.35);
+  --rail-hover: rgba(255, 255, 255, 0.15);
+  --rail-active-bg: #ffffff;
+  --rail-active-text: #000000;
+}
+
+:root,
+:root[data-theme] {
+  /* Element Plus 主題覆寫，跟著上方 token 走 */
+  --el-color-primary: var(--teal);
+  --el-color-primary-light-3: #3f7f7d;
+  --el-color-primary-light-5: #7aa8a6;
+  --el-color-primary-light-7: #b4cfce;
+  --el-color-primary-light-8: #d0e2e1;
+  --el-color-primary-light-9: var(--teal-soft);
+  --el-color-primary-dark-2: var(--teal-ink);
+  --el-color-warning: var(--amber);
+  --el-color-danger: var(--red);
+  --el-color-success: var(--olive);
+  --el-text-color-primary: var(--ink);
+  --el-text-color-regular: var(--ink);
+  --el-text-color-secondary: var(--muted);
+  --el-border-color: var(--line);
+  --el-border-color-light: var(--line);
+  --el-border-color-lighter: var(--line);
+  --el-fill-color-light: var(--paper);
+  --el-fill-color-lighter: var(--paper);
+  --el-fill-color: var(--surface-2);
+  --el-fill-color-blank: var(--surface);
+  --el-bg-color: var(--surface);
+  --el-bg-color-overlay: var(--surface);
+  --el-bg-color-page: var(--paper);
+  --el-text-color-placeholder: var(--muted);
+  --el-border-color-hover: var(--line-strong);
+  --el-disabled-bg-color: var(--surface-2);
+  --el-disabled-text-color: var(--muted);
+  --el-border-radius-base: var(--radius-s);
+  --el-font-family: var(--font-sans);
+  --el-font-size-base: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  height: 100%;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+h1 {
+  font-size: 22px;
+}
+
+h2 {
+  font-size: 17px;
+}
+
+h3 {
+  font-size: 15px;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--teal);
+}
+
+button {
+  font-family: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.page {
+  padding: 22px 28px 60px;
+  min-width: 0;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.page-head p {
+  color: var(--muted);
+  margin-top: 4px;
+  max-width: 70ch;
+}
+
+.page-head .actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.panel-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-body {
+  padding: 14px 16px;
+}
+
+.count {
+  display: inline-block;
+  min-width: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+  background: var(--slate-soft);
+  color: var(--slate);
+  font-variant-numeric: tabular-nums;
+}
+
+.count.hot {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.tag {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: var(--radius-s);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.tag.teal {
+  background: var(--teal-soft);
+  color: var(--teal-ink);
+}
+
+.tag.amber {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.tag.red {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.tag.olive {
+  background: var(--olive-soft);
+  color: var(--olive);
+}
+
+.tag.slate {
+  background: var(--slate-soft);
+  color: var(--slate);
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 6px 14px;
+  font-size: 14px;
+}
+
+.kv dt {
+  color: var(--muted);
+}
+
+.kv dd {
+  margin: 0;
+}
+
+.money {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* 列表 */
+.plain-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.plain-table th,
+.plain-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.plain-table th {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.plain-table td.num,
+/* 標題一律靠左（使用者決定），數字欄只有儲存格靠右 */
+.plain-table th.num {
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.plain-table td.id,
+.id {
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.plain-table tbody tr:hover {
+  background: var(--paper);
+}
+
+/* Element Plus 細節 */
+.el-button {
+  font-weight: 500;
+}
+
+.el-drawer__header {
+  margin-bottom: 0;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.el-drawer__body {
+  padding: 0;
+}
+
+/* 彈窗：高度超過視窗時在彈窗內捲動，不讓整頁出現卷軸 */
+.el-overlay-dialog {
+  overflow: hidden;
+}
+
+.el-dialog {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6vh;
+  margin-bottom: 6vh;
+  max-height: 88vh;
+  max-width: calc(100vw - 32px);
+}
+
+.el-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.el-table {
+  --el-table-header-bg-color: var(--paper);
+  --el-table-row-hover-bg-color: var(--paper);
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  box-shadow: 0 0 0 1px var(--line) inset;
+}
+
+.el-tabs__item {
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* 右上角帳號選單（el-dropdown 會掛到 body，樣式放全域） */
+.account-menu .persona-item .muted {
+  margin-left: 8px;
+  font-size: 12px;
+}
+
+.account-menu .persona-item.on {
+  color: var(--teal);
+  font-weight: 600;
+}
+
+/* 商機抽屜：從下往上滑入，寬到左方導覽欄、高到頂；導覽欄收起就滿版 */
+/* 商機抽屜：從下滑入，左邊貼導覽欄、上面貼 topbar，收合／展開導覽欄的按鈕都還按得到 */
+.deal-drawer-mask {
+  left: var(--rail-w);
+  top: var(--topbar-h);
+  bottom: 0;
+  height: auto;
+}
+
+body.rail-collapsed .deal-drawer-mask {
+  left: 0;
+}
+
+.deal-drawer.el-drawer {
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.12);
+}
+
+/* ---------- 階段軌道（StageTrack）：列表階段欄、SO 抽屜行動列共用 ----------
+   已完成淡色、目前深色且微抬高 2px、未到灰；tone 決定目前格與名稱的顏色語意 */
+.stage-track {
+  display: grid;
+  grid-template-columns: repeat(var(--stage-count), minmax(0, 1fr));
+  gap: var(--segment-gap, 3px);
+  width: var(--track-width);
+  align-items: end;
+  height: calc(var(--segment-height) + 2px);
+}
+
+.stage-track--cell {
+  --track-width: 124px;
+  --segment-height: 5px;
+  --segment-gap: 3px;
+}
+
+.stage-track--drawer {
+  --track-width: 98px;
+  --segment-height: 5px;
+  --segment-gap: 3px;
+}
+
+.stage-track--pipeline {
+  --track-width: 100%;
+  --segment-height: 6px;
+  --segment-gap: 4px;
+}
+
+.stage-segment {
+  display: block;
+  height: var(--segment-height);
+  border-radius: 2px;
+  background: var(--surface-2);
+}
+
+.stage-segment.is-complete {
+  background: var(--teal);
+  opacity: 0.48;
+}
+
+.stage-segment.is-current {
+  background: var(--teal);
+  height: calc(var(--segment-height) + 2px);
+}
+
+.stage-track.tone-initial .stage-segment.is-current {
+  background: var(--muted);
+}
+
+.stage-track.tone-waiting .stage-segment.is-current {
+  background: var(--amber);
+}
+
+.stage-track.tone-complete .stage-segment.is-current,
+.stage-track.tone-complete .stage-segment.is-complete,
+.stage-track.tone-closed .stage-segment {
+  background: var(--olive);
+  opacity: 1;
+}
+
+.stage-track.tone-complete .stage-segment.is-complete {
+  opacity: 0.55;
+}
+
+.stage-track.tone-closed .stage-segment {
+  opacity: 0.85;
+}
+
+/* 合約變更中：原階段不變，當前格改 amber 斜紋，表示「暫停在這裡」 */
+.stage-segment.is-exception {
+  background: repeating-linear-gradient(135deg, var(--amber) 0 2px, var(--surface) 2px 4px);
+}
+
+/* 階段名稱旁的狀態圓點：只有等外部、完成、變更時出現 */
+.stage-state-dot {
+  display: none;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 2px;
+}
+
+.tone-waiting > .stage-state-dot,
+.stage-cell--waiting .stage-state-dot {
+  display: inline-block;
+  background: var(--amber);
+}
+
+.stage-cell--exception .stage-state-dot {
+  display: inline-block;
+  background: var(--amber);
+}
+
+.stage-cell--complete .stage-state-dot,
+.stage-cell--closed .stage-state-dot {
+  display: inline-block;
+  background: var(--olive);
+}
+
+/* 必填欄位：星號放在欄位名稱後面（階段*），整站 el-form 統一 */
+.el-form-item.is-required:not(.is-no-asterisk).asterisk-left > .el-form-item__label::before {
+  content: none;
+}
+
+.el-form-item.is-required:not(.is-no-asterisk).asterisk-left > .el-form-item__label::after {
+  content: '*';
+  color: var(--el-color-danger);
+  margin-left: 2px;
+}
+
+/* 可點的單號／檔名 */
+.link {
+  color: var(--teal-ink, var(--teal));
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
