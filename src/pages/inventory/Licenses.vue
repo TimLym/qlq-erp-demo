@@ -58,7 +58,7 @@ onMounted(() => {
             <td><span class="tag teal">{{ kindLabel(r.l.kind) }}</span></td>
             <td>{{ r.l.name }} × {{ r.l.qty }}<div class="muted small id">{{ r.l.sku }}</div></td>
             <td class="id">{{ r.l.expires }}</td>
-            <td class="num" :class="{ warn: r.left <= store.remindDaysOf(r.l.kind) && r.left >= 0, over: r.left < 0 }">{{ r.left }}</td>
+            <td class="num" :class="{ warn: r.left <= store.remindDaysOf(r.l.kind) && r.left >= 0, over: r.left < 0 }"><span v-if="!Number.isFinite(r.left)" class="tag amber">待起算</span><template v-else>{{ r.left }}</template></td>
           </tr>
           <tr v-if="!rows.length"><td colspan="5" class="muted">沒有符合的項目</td></tr>
         </tbody>

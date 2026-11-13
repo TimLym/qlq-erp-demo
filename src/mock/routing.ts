@@ -44,6 +44,8 @@ export type AssignMode = '任一人' | '依申請人' | '指定人'
 export interface Assign {
   mode: AssignMode
   userId?: string
+  /** 代理人：這個角色沒有人時由他簽（高層預先指定，業務不能改） */
+  proxyUserId?: string
 }
 
 export interface Condition {
@@ -88,7 +90,7 @@ export interface RoutingConfig {
   docs: DocRouting[]
 }
 
-export const STEP_OPTIONS: Step[] = ['直屬主管', '業務主管', '執行長', '採購', '財務主管', '會計']
+export const STEP_OPTIONS: Step[] = ['直屬主管', '業務主管', '業務最高主管', '執行長', '採購', '採購主管', '財務主管', '會計']
 export const OPS_BY_KIND: Record<FactKind, Op[]> = {
   金額: ['≥', '<'],
   天數: ['≥', '<'],
@@ -107,6 +109,7 @@ export const docTypes: DocTypeDef[] = [
       { key: 'amount', label: '金額', kind: '金額' },
       { key: 'useStock', label: '用庫存', kind: '是否' },
       { key: 'insistBuy', label: '有庫存仍另行採購', kind: '是否' },
+      { key: 'collision', label: '撞單', kind: '是否' },
     ],
   },
   {
@@ -133,9 +136,9 @@ export const docTypes: DocTypeDef[] = [
     ],
   },
   {
-    key: '轉撥價', label: '轉撥價', group: '採購', desc: '採購提出庫存轉撥價異動。', source: '料號與轉撥價',
+    key: '品項參考成本', label: '品項參考成本', group: '採購', desc: '採購提出庫存品項參考成本異動。', source: '料號與品項參考成本',
     facts: [
-      { key: 'amount', label: '新轉撥價', kind: '金額' },
+      { key: 'amount', label: '新品項參考成本', kind: '金額' },
       { key: 'changePct', label: '異動幅度', kind: '百分比' },
     ],
   },
@@ -186,14 +189,18 @@ export const routing = reactive<RoutingConfig>({
   docs: [
     {
       docType: '上單',
-      nodes: [S(), { ...N('業務主管', 1), assign: { mode: '依申請人' } }, N('執行長', 2, BRANCH), N('採購', 3), N('財務主管', 4), E(5)],
+      /* 內控：至少三關三個不同人。第三關採購主管目前沒有人，由財務主管劉欣怡代理；撞單硬上單時加業務最高主管裁決（不是被撞單業務的主管） */
+      nodes: [S(), { ...N('業務主管', 1), assign: { mode: '依申請人' } }, { ...N('業務最高主管', 2, MAIN - 120), assign: { mode: '任一人', proxyUserId: 'u-wang' } }, N('執行長', 3, BRANCH), N('採購', 4), { ...N('採購主管', 5), assign: { mode: '任一人', proxyUserId: 'u-liu' } }, E(6)],
       edges: [
         L('start', 'n-業務主管'),
-        L('n-業務主管', 'n-執行長', 1, [{ fact: 'margin', op: '<', value: 0 }], '負毛利先給執行長，避免採購白審'),
+        L('n-業務主管', 'n-業務最高主管', 1, [{ fact: 'collision', op: '是' }], '撞單硬要上單，由業務最高主管裁決'),
+        L('n-業務主管', 'n-執行長', 2, [{ fact: 'margin', op: '<', value: 0 }], '負毛利先給執行長，避免採購白審'),
         L('n-業務主管', 'n-採購'),
+        L('n-業務最高主管', 'n-執行長', 1, [{ fact: 'margin', op: '<', value: 0 }], '負毛利先給執行長'),
+        L('n-業務最高主管', 'n-採購'),
         L('n-執行長', 'n-採購'),
-        L('n-採購', 'n-財務主管'),
-        L('n-財務主管', 'end'),
+        L('n-採購', 'n-採購主管'),
+        L('n-採購主管', 'end'),
       ],
     },
     {
@@ -225,7 +232,7 @@ export const routing = reactive<RoutingConfig>({
       edges: [L('start', 'n-會計'), L('n-會計', 'n-採購'), L('n-採購', 'n-執行長'), L('n-執行長', 'end')],
     },
     {
-      docType: '轉撥價',
+      docType: '品項參考成本',
       nodes: [S(), N('財務主管', 1), E(2)],
       edges: [L('start', 'n-財務主管'), L('n-財務主管', 'end')],
     },
@@ -320,6 +327,10 @@ export function assignText(n: RouteNode): string {
 /** 算出這一關的候選人 */
 export function resolveStep(n: RouteNode, role: Role, ctx: EvalContext): ApprovalStep {
   const m = assignModeOf(n)
+  const proxy = n.assign?.proxyUserId ? users.find((x) => x.id === n.assign!.proxyUserId) : undefined
+  if (proxy && m !== '指定人' && !users.some((x) => x.role === role)) {
+    return { role, mode: m, candidateIds: [proxy.id], label: `代理 ${proxy.name}（缺${role}）`, proxy: true }
+  }
   if (m === '指定人') {
     const u = users.find((x) => x.id === n.assign?.userId)
     if (u) return { role, mode: m, candidateIds: [u.id], label: `指定 ${u.name}` }
@@ -368,6 +379,20 @@ export function evaluate(docType: string, ctx: EvalContext = {}, cfg: RoutingCon
       steps.push(resolveStep(n, r, ctx))
     }
     cur = n.id
+  }
+  /* 代理人剛好也是另一關唯一的簽核人（例：王承恩代理業務最高主管，又是執行長）→ 併成一關，避免同一人簽兩關卡死 */
+  const sole = (s: ApprovalStep) => {
+    if (s.candidateIds) return s.candidateIds.length === 1 ? s.candidateIds[0] : undefined
+    const only = users.filter((u) => u.role === s.role)
+    return only.length === 1 ? only[0]!.id : undefined
+  }
+  for (let i = steps.length - 1; i > 0; i--) {
+    const who = sole(steps[i]!)
+    const j = who ? steps.findIndex((s, k) => k < i && sole(s) === who) : -1
+    if (j < 0) continue
+    steps[j] = { ...steps[j]!, label: `${steps[j]!.label}，兼${route[i]}` }
+    steps.splice(i, 1)
+    route.splice(i, 1)
   }
   return { route, path, edges, applied, steps }
 }

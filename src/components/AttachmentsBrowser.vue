@@ -1,15 +1,24 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Paperclip } from '@element-plus/icons-vue'
-import { type AttachmentType } from '../mock/data'
+import { applications, vendors, type Attachment, type AttachmentType } from '../mock/data'
 import { useAppStore } from '../stores/app'
 import { dateTime } from '../utils/format'
 
-/* 附件總覽（簽核中心的頁簽）：客戶回簽、廠商報價單、廠商簽回、出貨簽收統一查詢，只查不傳 */
+/*
+ * 附件總覽（簽核中心的頁簽）：所有簽核類型的附件統一查詢，只查不傳。
+ * 案件附件來自附件庫；行政申請（報帳發票、合約）與供應商建檔文件掛在各自的單據上，這裡一併列出（1112 會議 #18）。
+ */
 const store = useAppStore()
-const attachments = computed(() => store.attachments)
+const fromApps = computed<Attachment[]>(() =>
+  applications.flatMap((a) => a.files.map((f, i) => ({ id: `app-${a.id}-${i}`, type: '行政申請' as const, refNo: a.appNo, party: `${a.type}・${a.applicant}`, fileName: f, uploader: a.applicant, at: a.at, sizeKb: 420, scan: '通過' as const, hash: '' }))),
+)
+const fromVendors = computed<Attachment[]>(() =>
+  vendors.flatMap((v) => (v.docs ?? []).map((f, i) => ({ id: `ven-${v.id}-${i}`, type: '供應商文件' as const, refNo: v.vendorNo, party: v.name, fileName: f, uploader: v.appliedBy ?? '採購', at: v.appliedAt ?? '', sizeKb: 680, scan: '通過' as const, hash: '' }))),
+)
+const attachments = computed(() => [...store.attachments, ...fromApps.value, ...fromVendors.value])
 
-const types: AttachmentType[] = ['客戶回簽', '廠商報價單', '廠商簽回', '出貨簽收', '報價單 PDF', '其他']
+const types: AttachmentType[] = ['客戶回簽', '廠商報價單', '廠商簽回', '出貨簽收', '報價單 PDF', '行政申請', '供應商文件', '其他']
 const type = ref<AttachmentType | ''>('')
 const q = ref('')
 
@@ -23,7 +32,7 @@ const rows = computed(() => {
 })
 const countOf = (t: AttachmentType) => attachments.value.filter((a) => a.type === t && !a.voided).length
 
-const typeTag: Record<AttachmentType, string> = { 客戶回簽: 'teal', 廠商報價單: 'slate', 廠商簽回: 'olive', 出貨簽收: 'teal', '報價單 PDF': 'slate', 其他: 'slate' }
+const typeTag: Record<AttachmentType, string> = { 客戶回簽: 'teal', 廠商報價單: 'slate', 廠商簽回: 'olive', 出貨簽收: 'teal', '報價單 PDF': 'slate', 行政申請: 'amber', 供應商文件: 'olive', 其他: 'slate' }
 </script>
 
 <template>

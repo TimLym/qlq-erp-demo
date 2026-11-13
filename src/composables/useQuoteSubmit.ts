@@ -1,5 +1,5 @@
 import { computed, watch, type Ref } from 'vue'
-import { deals, quotes, orders, stock, transferOf, milestonesFromTemplate, milestoneProblems, quoteTotal, quoteCost, lineCost, TAX_RATE, type Role, type Quote, type QuoteItem, type QuoteLine } from '../mock/data'
+import { deals, quotes, orders, stock, transferOf, milestonesFromTemplate, milestoneProblems, quoteTotal, quoteCost, lineCost, natureOf, hasExpiry, quoteTaxTotal, itemTaxTotal, stockHolds, type Role, type Quote, type QuoteItem, type QuoteLine } from '../mock/data'
 import { evaluate, routing } from '../mock/routing'
 import { useAppStore } from '../stores/app'
 import { money, pct } from '../utils/format'
@@ -55,8 +55,11 @@ export function useQuoteSubmit(dealId: Ref<string | null | undefined>, activeQuo
   const superseded = (v: Quote) => v.status === '報價回簽' && dealQuotes.value.some((x) => x.status === '草稿' && x.version > v.version)
 
   /* ---------- 金額 ---------- */
-  const withTax = (n: number) => Math.round(n * (1 + TAX_RATE))
+  const withTax = (n: number) => Math.round(n * (1.05))
   const revenue = computed(() => (q.value ? quoteTotal(q.value) : 0))
+  /** 含稅總計：含稅發起的報價單直接加總含稅單價，不由未稅換算 */
+  const revenueTax = computed(() => (q.value ? quoteTaxTotal(q.value) : 0))
+  const itemTax = (item: QuoteItem) => (q.value ? itemTaxTotal(q.value, item) : 0)
   const cost = computed(() => (q.value ? quoteCost(q.value) : 0))
   const margin = computed(() => (revenue.value ? (revenue.value - cost.value) / revenue.value : 0))
   const linesOf = (item: QuoteItem) => (q.value?.lines ?? []).filter((l) => l.itemNo === item.no)
@@ -69,11 +72,15 @@ export function useQuoteSubmit(dealId: Ref<string | null | undefined>, activeQuo
   const lineUnitCost = (l: QuoteLine): number | null => (buyPart(l) > 0 && l.unitCost === null ? null : lineCost(l) / l.qty)
   const missingCost = computed(() => (q.value?.lines ?? []).filter((l) => buyPart(l) > 0 && l.unitCost === null).length)
   const needsFile = (l: QuoteLine) => l.vendor !== '自有工程' && buyPart(l) > 0
-  const missingFiles = computed(() => (q.value?.lines ?? []).filter((l) => needsFile(l) && !l.vendorQuoteFile))
+  /* 送審時每條採購項次「已上傳報價單」或「議價中」二擇一 */
+  const missingFiles = computed(() => (q.value?.lines ?? []).filter((l) => needsFile(l) && !l.vendorQuoteFile && !l.bargaining))
+  const bargainingLines = computed(() => (q.value?.lines ?? []).filter((l) => needsFile(l) && !l.vendorQuoteFile && l.bargaining))
 
   /* ---------- 庫存 ---------- */
+  /** 可用庫存：未保留的量，加上這個商機自己保留中的量 */
   function stockFor(sku: string) {
-    return stock.filter((s) => s.sku === sku).reduce((n, s) => n + s.qty - s.reserved, 0)
+    const own = stockHolds.filter((h) => h.dealId === dealId.value && h.status === '保留中' && h.sku === sku).reduce((n, h) => n + h.qty, 0)
+    return stock.filter((s) => s.sku === sku).reduce((n, s) => n + s.qty - s.reserved, 0) + own
   }
   const canUseStock = (l: QuoteLine) => l.vendor !== '自有工程' && stockFor(l.intSku) > 0 && transferOf(l.intSku) !== undefined
   const stockMode = (l: QuoteLine): 'stock' | 'buy' => (stockPart(l) > 0 ? 'stock' : 'buy')
@@ -109,6 +116,7 @@ export function useQuoteSubmit(dealId: Ref<string | null | undefined>, activeQuo
         amount: revenue.value,
         useStock: (q.value?.lines ?? []).some((l) => stockPart(l) > 0),
         insistBuy: (q.value?.lines ?? []).some((l) => canUseStock(l) && stockPart(l) === 0),
+        collision: !!deal.value?.collision,
       },
     }),
   )
@@ -128,6 +136,15 @@ export function useQuoteSubmit(dealId: Ref<string | null | undefined>, activeQuo
     if (!x.signbackFile) list.push('尚未上傳客戶回簽')
     if (missingFiles.value.length) list.push(`${missingFiles.value.length} 項缺廠商報價單`)
     if (missingCost.value) list.push(`${missingCost.value} 項成本未填`)
+    /* 必填第二段：送審才檢查內部項次與期間 */
+    const noInternal = x.items.filter((i) => !x.lines.some((l) => l.itemNo === i.no)).length
+    if (noInternal) list.push(`${noInternal} 項對外項次沒有內部項次`)
+    const badInternal = x.lines.filter((l) => !l.intSku.trim() || l.qty <= 0).length
+    if (badInternal) list.push(`${badInternal} 項內部項次缺 SKU 或數量`)
+    const noMonths = x.lines.filter((l) => natureOf(l) !== '硬體' && hasExpiry(natureOf(l)) && !(l.months && l.months > 0)).length
+    if (noMonths) list.push(`${noMonths} 項授權或合約沒填期間`)
+    /* 內控：至少三關三個不同人 */
+    if (routeResolved.value.steps.length < 3) list.push('簽核路由不足三關，請洽系統管理員調整簽核進度設定')
     const noReason = x.lines.filter((l) => canUseStock(l) && stockPart(l) === 0 && !(l.insistReason ?? '').trim())
     if (noReason.length) list.push(`${noReason.length} 項庫存夠卻另行採購，請填理由`)
     if (needReason.value && !reason.value.trim()) list.push('負毛利需填寫送審理由')
@@ -164,6 +181,8 @@ export function useQuoteSubmit(dealId: Ref<string | null | undefined>, activeQuo
     const x = q.value
     const d = deal.value
     if (blockers.value.length || !x || !d) return undefined
+    /* 內部項次只填 SKU：PO 與庫存用的品名先帶 SKU */
+    x.lines.forEach((l) => { if (!l.extName.trim()) l.extName = l.intSku })
     const id = `a-${Date.now()}`
     const now = new Date()
     store.approvals.unshift({
@@ -228,7 +247,8 @@ export function useQuoteSubmit(dealId: Ref<string | null | undefined>, activeQuo
     if (!x || !d) return [na('vendorFiles', '廠商報價單', '尚未建立報價單'), na('signback', '客戶報價單', '尚未建立報價單'), na('milestones', '請款條件', '—'), na('stage', '階段到「待接單」', d ? `目前 ${d.stage}` : '—')]
     const items: SubmitChecklistItem[] = []
     const needFiles = x.lines.filter(needsFile)
-    items.push(!needFiles.length ? na('vendorFiles', '廠商報價單', '沒有採購項次') : { key: 'vendorFiles', label: '廠商報價單', status: missingFiles.value.length ? 'incomplete' : 'complete', detail: missingFiles.value.length ? `缺 ${missingFiles.value.length} 項` : `${needFiles.length} 項已附` })
+    const bargainNote = bargainingLines.value.length ? `，${bargainingLines.value.length} 項議價中` : ''
+    items.push(!needFiles.length ? na('vendorFiles', '廠商報價單', '沒有採購項次') : { key: 'vendorFiles', label: '廠商報價單', status: missingFiles.value.length ? 'incomplete' : 'complete', detail: missingFiles.value.length ? `缺 ${missingFiles.value.length} 項` : `${needFiles.length - bargainingLines.value.length} 項已附${bargainNote}` })
     items.push({ key: 'signback', label: '客戶報價單', status: x.signbackFile ? 'complete' : 'incomplete', detail: x.signbackFile ? '已回簽' : '尚未回簽' })
     if (isRetry.value) items.push(na('milestones', '請款條件', '合約變更沿用原 SO'))
     else {
@@ -243,5 +263,5 @@ export function useQuoteSubmit(dealId: Ref<string | null | undefined>, activeQuo
   const canEditMilestones = computed(() => internalEditable.value && !isRetry.value && !!q.value)
   const submitLabel = computed(() => `${isRetry.value ? '重審送審' : isReturned.value ? '補件並重新送審' : '上單送審'}並鎖定 v${q.value?.version ?? ''}`)
 
-  return { order, quoteVersion, state, checklistItems, canSubmit, canEditMilestones, submitLabel, deal, dealQuotes, q, salesSide, canNewVersion, changeOrder, isChangeQuote, isLatest, draftEditable, internalEditable, submitStage, isRetry, retryOrder, baseQuote, quoteApproval, approvalPending, returnedApproval, isReturned, lineEditable, attempt, lastReturnNote, superseded, withTax, revenue, cost, margin, linesOf, itemRevenue, itemCost, itemCostKnown, itemMargin, stockPart, buyPart, lineUnitCost, missingCost, needsFile, missingFiles, stockFor, canUseStock, stockMode, setStockMode, milestones, routeOf, routeResolved, routePreview, needReason, flags, stageOk, reason, blockers, diff, submit }
+  return { order, quoteVersion, state, checklistItems, canSubmit, canEditMilestones, submitLabel, deal, dealQuotes, q, salesSide, canNewVersion, changeOrder, isChangeQuote, isLatest, draftEditable, internalEditable, submitStage, isRetry, retryOrder, baseQuote, quoteApproval, approvalPending, returnedApproval, isReturned, lineEditable, attempt, lastReturnNote, superseded, withTax, revenue, revenueTax, itemTax, bargainingLines, cost, margin, linesOf, itemRevenue, itemCost, itemCostKnown, itemMargin, stockPart, buyPart, lineUnitCost, missingCost, needsFile, missingFiles, stockFor, canUseStock, stockMode, setStockMode, milestones, routeOf, routeResolved, routePreview, needReason, flags, stageOk, reason, blockers, diff, submit }
 }

@@ -42,7 +42,7 @@ const history = computed(() =>
     .sort((x, y) => y.h.at.localeCompare(x.h.at)),
 )
 
-const typeTag: Record<string, string> = { 上單: 'teal', PO: 'slate', 預付: 'amber', 供應商建檔: 'olive', 轉撥價: 'slate', 申請: 'slate' }
+const typeTag: Record<string, string> = { 上單: 'teal', PO: 'slate', 預付: 'amber', 供應商建檔: 'olive', 品項參考成本: 'slate', 申請: 'slate' }
 const statusTag: Record<string, string> = { 待簽核: 'amber', 已核准: 'olive', 已退回: 'red', 已收回: 'slate' }
 </script>
 
@@ -58,7 +58,7 @@ const statusTag: Record<string, string> = { 待簽核: 'amber', 已核准: 'oliv
           <el-option value="PO" label="PO" />
           <el-option value="預付" label="預付" />
           <el-option value="供應商建檔" label="供應商建檔" />
-          <el-option value="轉撥價" label="轉撥價" />
+          <el-option value="品項參考成本" label="品項參考成本" />
           <el-option value="申請" label="行政申請" />
         </el-select>
       </div>

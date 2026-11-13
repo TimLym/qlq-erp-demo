@@ -5,6 +5,8 @@ import { Search, Bell, Star, StarFilled, Plus, ArrowDown, Fold, Expand, Setting,
 import { navForRole, phaseLabel, findNavItem, type NavItem } from '../nav'
 import { useAppStore } from '../stores/app'
 import { purchaseOrders } from '../mock/data'
+import NotifyBell from '../components/NotifyBell.vue'
+import ImportantCards from '../components/ImportantCards.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -202,7 +204,7 @@ function onBlur() {
             :prefix-icon="Search"
             @focus="focused = true"
             @blur="onBlur"
-            @keydown.enter="results[0] && go(results[0].to)"
+            @keydown.enter="!$event.isComposing && results[0] && go(results[0].to)"
           />
           <div v-if="open" class="search-results" role="listbox">
             <template v-if="showActions">
@@ -221,6 +223,7 @@ function onBlur() {
           </div>
         </div>
         <div class="topbar-right">
+          <NotifyBell />
           <el-dropdown trigger="click" placement="bottom-end" @command="onAccount">
             <button type="button" class="account" aria-label="帳號選單">
               <span class="avatar" aria-hidden="true">{{ initials }}</span>
@@ -228,7 +231,6 @@ function onBlur() {
                 <span class="who-name">{{ store.currentUser.name }}</span>
                 <span class="who-role">{{ store.role }}</span>
               </span>
-              <span v-if="store.unreadCount" class="badge">{{ store.unreadCount }}</span>
               <el-icon class="chev"><ArrowDown /></el-icon>
             </button>
             <template #dropdown>
@@ -249,6 +251,7 @@ function onBlur() {
       <main class="content">
         <RouterView />
       </main>
+      <ImportantCards />
     </div>
   </div>
 </template>

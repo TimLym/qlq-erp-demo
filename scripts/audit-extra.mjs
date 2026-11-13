@@ -80,7 +80,7 @@ export function checkExtra(m, issues) {
     const log = o.log ?? []
     const has = (t) => log.some((e) => e.text.includes(t))
     if (!log.length) issues.push(`${tag} 沒有流程紀錄`)
-    if (!has('SO 成立')) issues.push(`${tag} 流程紀錄沒有「SO 成立」`)
+    if (o.phase !== '保證單' && !has('SO 成立')) issues.push(`${tag} 流程紀錄沒有「SO 成立」`)
     if (o.stageIndex >= 1 && !has('已下單') && !has('已入庫')) issues.push(`${tag} 流程紀錄沒有「已下單」`)
     if (o.stageIndex >= 3 && !has('已入庫')) issues.push(`${tag} 流程紀錄沒有「已入庫」`)
     if (o.stageIndex === 4 && !has('部分出貨')) issues.push(`${tag} 流程紀錄沒有「部分出貨」`)
@@ -110,7 +110,7 @@ export function checkExtra(m, issues) {
     const needBuy = q.lines.some((l) => l.vendor !== '自有工程' && buyPart(l) > 0)
     if (o.stageIndex >= 1 && needBuy && !pos.some((p) => p.status !== '待核准')) issues.push(`${tag} 已下單以上但沒有核准的 PO`)
     if (o.stageIndex >= 3 && needBuy && !pos.some((p) => p.status === '已到貨')) issues.push(`${tag} 已入庫以上但沒有已到貨的 PO`)
-    if (o.stageIndex === 0 && needBuy && !pos.length && !todos.some((x) => x.kind === '下單' && x.refNo === o.soNo)) issues.push(`${tag} 接單中需要採購但沒有「建立 PO」代辦`)
+    if (o.phase !== '保證單' && o.stageIndex === 0 && needBuy && !pos.length && !todos.some((x) => x.kind === '下單' && x.refNo === o.soNo)) issues.push(`${tag} 接單中需要採購但沒有「建立 PO」代辦`)
     if (o.stageIndex >= 1 && o.actualCost === undefined) issues.push(`${tag} 已下單以上但沒有公司實際成本`)
     /* 簽收代辦 */
     const unsigned = ships.some((s) => s.status === '已出貨')
@@ -215,5 +215,16 @@ export function checkExtra(m, issues) {
     const d = deals.find((x) => x.id === q.dealId)
     if (q.signbackFile && !attachments.some((a) => a.type === '客戶回簽' && a.fileName === q.signbackFile)) issues.push(`報價單 ${q.id}（${d?.customer}）回簽檔 ${q.signbackFile} 不在附件`)
     for (const l of q.lines) if (l.vendorQuoteFile && !attachments.some((a) => a.type === '廠商報價單' && a.fileName === l.vendorQuoteFile)) issues.push(`報價單 ${q.id}（${d?.customer}）廠商報價單 ${l.vendorQuoteFile} 不在附件`)
+  }
+
+  /* 批次 1：SO 訂單明細快照、工程結案 */
+  for (const o of orders) {
+    if (!o.lines || !o.lines.length) { issues.push(`訂單 ${o.soNo} 沒有訂單明細快照`); continue }
+    const total = o.lines.reduce((n, l) => n + l.qty * l.unitPrice, 0)
+    if (total !== o.amount) issues.push(`訂單 ${o.soNo} 訂單明細合計 ${total} ≠ 訂單金額 ${o.amount}`)
+    const allPaid = o.milestones.length > 0 && o.milestones.every((x) => x.status === '已收款')
+    if (o.engClosedAt && o.stageIndex < 4) issues.push(`訂單 ${o.soNo} 還沒出貨就工程結案`)
+    o.milestones.forEach((x, i) => { if (!x.planInvoiceAt || !x.planPayAt) issues.push(`訂單 ${o.soNo} 第 ${i + 1} 期沒有預計開票日或預計付款日`); else if (x.planPayAt < x.planInvoiceAt) issues.push(`訂單 ${o.soNo} 第 ${i + 1} 期預計付款日早於預計開票日`) })
+    if (o.stageIndex >= 6 && allPaid && !o.engClosedAt) issues.push(`訂單 ${o.soNo} 已驗收且收齊但沒有工程結案日，列表會一直顯示未結案`)
   }
 }

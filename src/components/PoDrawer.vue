@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Upload } from '@element-plus/icons-vue'
-import type { PurchaseOrder } from '../mock/data'
+import { deals, orders, isGuarantee, type PurchaseOrder } from '../mock/data'
 import { money } from '../utils/format'
 import { useJump } from '../composables/useJump'
 
@@ -16,6 +16,28 @@ const open = computed({
 })
 const { goRef } = useJump()
 const statusTag: Record<string, string> = { 待核准: 'amber', 已下單: 'teal', 已到貨: 'olive' }
+/*
+ * 關聯路徑（批次 6）：商機 →（保證單）→ PO → SO。預下單的 PO 先掛在商機或保證單上，
+ * 上單核准（保證單轉正式）時自動改掛到 SO；作廢則轉為公司庫存。
+ */
+interface PathNode { kind: string; no: string; state: string; done: boolean; jump?: string }
+const path = computed<PathNode[]>(() => {
+  const po = props.po
+  if (!po) return []
+  const dealId = po.dealId ?? po.sourceDealId
+  const d = deals.find((x) => x.id === dealId)
+  const g = orders.find((o) => (po.sourceGuaranteeNo ? o.soNo === po.sourceGuaranteeNo : o.dealId === dealId && (isGuarantee(o) || o.guaranteeNo)))
+  const so = po.soNo.startsWith('SO-') ? orders.find((o) => o.soNo === po.soNo) : undefined
+  const list: PathNode[] = []
+  if (d) list.push({ kind: '商機', no: d.dealNo, state: d.stage, done: true, jump: d.dealNo })
+  if (g && isGuarantee(g)) list.push({ kind: '保證單', no: g.soNo, state: g.voidedAt ? '已作廢' : g.guaranteeReason ?? '', done: true, jump: g.soNo })
+  else if (g?.guaranteeNo) list.push({ kind: '保證單', no: g.guaranteeNo, state: '已轉正式', done: true })
+  list.push({ kind: po.preOrder ? 'PO（預下單）' : 'PO', no: po.poNo, state: po.status, done: po.status !== '待核准' })
+  if (so) list.push({ kind: 'SO', no: so.soNo, state: '已關聯', done: true, jump: so.soNo })
+  else if (po.soNo === '公司庫存') list.push({ kind: '公司庫存', no: '—', state: '案子未成立，轉為備貨', done: true })
+  else list.push({ kind: 'SO', no: '—', state: '上單核准後自動關聯', done: false })
+  return list
+})
 </script>
 
 <template>
@@ -39,6 +61,17 @@ const statusTag: Record<string, string> = { 待核准: 'amber', 已下單: 'teal
         <el-button @click="emit('close')">關閉</el-button>
       </header>
       <div class="body">
+        <section class="block">
+          <h3>關聯</h3>
+          <ol class="path">
+            <li v-for="(n, i) in path" :key="i" :class="{ done: n.done }">
+              <span class="k">{{ n.kind }}</span>
+              <a v-if="n.jump" class="link id" @click="goRef(n.jump)">{{ n.no }}</a>
+              <span v-else class="id">{{ n.no }}</span>
+              <span class="muted small">{{ n.state }}</span>
+            </li>
+          </ol>
+        </section>
         <section class="block">
           <div class="block-head">
             <h3>進度</h3>
@@ -80,6 +113,52 @@ const statusTag: Record<string, string> = { 待核准: 'amber', 已下單: 'teal
 </template>
 
 <style scoped>
+.path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.path li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 150px;
+  padding: 8px 22px 8px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+}
+
+.path li.done {
+  border-style: solid;
+  border-color: var(--teal);
+  background: var(--teal-soft);
+}
+
+.path li + li {
+  margin-left: 22px;
+}
+
+.path li + li::before {
+  content: '→';
+  position: absolute;
+  left: -18px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+}
+
+.path .k {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .drawer {
   display: flex;
   flex-direction: column;

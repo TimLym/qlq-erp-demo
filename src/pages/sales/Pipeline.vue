@@ -5,8 +5,9 @@ import { AgGridVue } from 'ag-grid-vue3'
 import { themeQuartz, type ColDef, type GridApi, type GridReadyEvent, type RowClickedEvent } from 'ag-grid-community'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Setting, Plus } from '@element-plus/icons-vue'
-import { deals, orders, customers, dealMembers, stageDefaultProb, isOrderClosed, type Deal } from '../../mock/data'
+import { deals, orders, customers, dealMembers, stageDefaultProb, isOrderClosed, stageIdleDays, IDLE_DAYS, type Deal } from '../../mock/data'
 import { useAppStore } from '../../stores/app'
+import { deptWarningOf } from '../../utils/deptCheck'
 import { themes } from '../../theme'
 import { money, pct, dateTime } from '../../utils/format'
 import DealDrawer from '../../components/DealDrawer.vue'
@@ -24,9 +25,8 @@ const drawerQuote = ref<string | undefined>()
 /* 資料範圍：業務只看自己，主管與執行長看全部 */
 const scoped = computed(() => store.scopedDeals)
 const showLost = ref(false)
-/* 閒置商機：超過 30 天沒更新且還在進行中，標示提醒（釋出規則待確認，Demo 只標示不自動釋出） */
-const IDLE_DAYS = 30
-const idleDays = (d: Deal) => (d.stage === 'SO已成立' || d.stage === '未成交' ? 0 : Math.floor((new Date('2026-10-08').getTime() - new Date(d.updatedAt).getTime()) / 86400000))
+/* 閒置商機：三個月階段沒變（1112 會議 #12），通知業務本人與主管，主管在商機抽屜手動釋放 */
+const idleDays = (d: Deal) => stageIdleDays(d)
 /* 階段欄只顯示階段本身（待接單涵蓋 SO 上單送審與簽核中） */
 const stageLabel = (d: Deal) => d.stage
 /* 預設不列未成交，也不列已結案（SO已成立且訂單已結案）的商機 */
@@ -48,8 +48,12 @@ const theme = computed(() => {
 })
 
 /* 承辦人：客戶部門加該部門在客戶主檔的聯絡人 */
+const deptContact = (customer: string, dept: string) => customers.find((x) => x.name === customer)?.depts.find((x) => x.name === dept)?.contact ?? ''
+const personOf = (d: Deal) => d.contact || deptContact(d.customer, d.customerDept)
+/* 比對承辦人：去掉半形、全形空白 */
+const normName = (x: string) => x.replace(/[\s\u3000]/g, '')
 const contactOf = (d: Deal) => {
-  const c = customers.find((x) => x.name === d.customer)?.depts.find((x) => x.name === d.customerDept)?.contact
+  const c = personOf(d)
   return c ? `${d.customerDept} ${c}` : d.customerDept
 }
 /* 協作欄：加人（有權限才出現）與留言泡泡（有未讀提及顯示紅數字，點了直接開留言頁簽） */
@@ -215,7 +219,7 @@ function lastComment(dealId: string) {
 
 /* 防撞檢核：新增商機 */
 const creating = ref(false)
-const blankForm = () => ({ customer: '', dept: '', product: '', amount: 500000, via: '直接交易' as Deal['via'], endUser: '', kind: '新購' as Deal['kind'], renewalOf: '', renewalReason: '到期續簽' as NonNullable<Deal['renewalReason']>, renewalItems: [] as string[], needsEng: false, preOrder: false, prepay: false })
+const blankForm = () => ({ customer: '', dept: '', contact: '', product: '', amount: 500000, via: '直接交易' as Deal['via'], endUser: '', kind: '新購' as Deal['kind'], renewalOf: '', renewalReason: '到期續簽' as NonNullable<Deal['renewalReason']>, renewalItems: [] as string[], needsEng: false, preOrder: false, prepay: false })
 const form = ref(blankForm())
 /* 續約自：同一客戶、已成立 SO 的商機；選了就帶原案的類型、部門、產品 */
 const renewalOptions = computed(() => store.renewalCandidates(form.value.customer))
@@ -237,18 +241,24 @@ watch(() => form.value.renewalOf, (id) => {
   form.value.endUser = d.endUser ?? ''
 })
 watch(() => form.value.customer, () => { form.value.renewalOf = '' })
+const activeDeals = computed(() => deals.filter((d) => d.customer === form.value.customer && d.stage !== '未成交' && d.stage !== 'SO已成立'))
 const conflict = computed(() => {
-  if (!form.value.customer || !form.value.dept) return null
-  return deals.find((d) => d.customer === form.value.customer && d.customerDept === form.value.dept && d.stage !== '未成交' && d.stage !== 'SO已成立') ?? null
+  const who = normName(form.value.contact)
+  if (!form.value.customer || !who) return null
+  return activeDeals.value.find((d) => normName(personOf(d)) === who) ?? null
 })
+const sameDept = computed(() => (!form.value.dept || conflict.value ? null : activeDeals.value.find((d) => d.customerDept === form.value.dept) ?? null))
+/* 選了部門就帶主檔聯絡人當承辦人，可改 */
+watch(() => form.value.dept, (dept) => { form.value.contact = dept && dept !== NEW_DEPT ? deptContact(form.value.customer, dept) : '' })
+/* 新部門名稱：常見發包單位字眼（採購、總務…）或和既有部門很像時警示，要填發起需求的單位 */
+const deptWarning = computed(() => (form.value.dept !== NEW_DEPT ? '' : deptWarningOf(newDeptName.value, (customerRec.value?.depts ?? []).map((d) => d.name))))
 /* 客戶與部門來自客戶主檔；沒有主檔的客戶要先建檔 */
 const NEW_DEPT = '新部門（需主檔建立）'
 const customerOptions = computed(() => customers.filter((c) => c.status === '正常' && c.type === '終端客戶'))
 const customerRec = computed(() => customers.find((c) => c.name === form.value.customer))
 const deptsOf = computed(() => [...(customerRec.value?.depts.map((d) => d.name) ?? []), NEW_DEPT])
 const newDeptName = ref('')
-function createDeal() {
-  if (conflict.value) return
+async function createDeal() {
   const rec = customerRec.value
   if (!rec) {
     ElMessage.warning('客戶不在主檔，請先到客戶主檔建檔')
@@ -273,9 +283,17 @@ function createDeal() {
       ElMessage.warning(`「${name}」已存在於主檔，請直接選用`)
       return
     }
-    rec.depts.push({ name })
     dept = name
   }
+  /* 同承辦人已有進行中的商機：可以硬建，但標撞單，送審時加業務最高主管裁決 */
+  const hit = conflict.value
+  if (hit) {
+    const ok = await ElMessageBox.confirm(`${hit.dealNo} 由 ${hit.owner} 負責，承辦人同樣是 ${personOf(hit)}。仍要建立？上單送審時會加一關業務最高主管裁決。`, '撞單', { confirmButtonText: '仍要建立', cancelButtonText: '取消', type: 'warning' }).then(() => true, () => false)
+    if (!ok) return
+  }
+  /* 確認要建立後才寫入客戶主檔 */
+  if (form.value.dept === NEW_DEPT) rec.depts.push({ name: dept })
+  const needsEng = form.value.needsEng
   const now = new Date()
   const ymd = now.toISOString().slice(0, 10)
   const seq = deals.filter((d) => d.dealNo.startsWith(`D-${ymd.slice(0, 4)}-${ymd.slice(5, 7)}${ymd.slice(8, 10)}`)).length + 1
@@ -286,6 +304,8 @@ function createDeal() {
     dealNo,
     customer: form.value.customer,
     customerDept: dept,
+    contact: form.value.contact.trim() && form.value.contact.trim() !== deptContact(form.value.customer, dept) ? form.value.contact.trim() : undefined,
+    collision: hit ? { withDealId: hit.id, at: now.toISOString() } : undefined,
     via: form.value.via,
     endUser: form.value.via === '中間商' && form.value.endUser.trim() ? form.value.endUser.trim() : undefined,
     kind: form.value.kind,
@@ -312,7 +332,7 @@ function createDeal() {
   form.value = blankForm()
   newDeptName.value = ''
   if (d.preOrder) store.requestPreOrder(d)
-  if (form.value.needsEng) store.requestEngineering(d, { type: '售前諮詢', title: '售前支援', desc: d.product, dueDate: close, urgent: false })
+  if (needsEng) store.requestEngineering(d, { type: '售前諮詢', title: '售前支援', desc: d.product, dueDate: close, urgent: false })
   ElMessage.success(`商機已建立，編號 ${dealNo}，${d.owner} 負責${d.prepay ? '；需預付，之後會產生預付款簽核' : ''}${d.preOrder ? '；已通知採購預下單，請先建立報價單' : ''}`)
   openDeal.value = d.id
 }
@@ -437,7 +457,11 @@ onMounted(() => {
           <el-select v-model="form.dept" :disabled="!form.customer" placeholder="部門採主檔選取，避免同一部門多種寫法" style="width: 100%">
             <el-option v-for="d in deptsOf" :key="d" :value="d" :label="d" />
           </el-select>
-          <el-input v-if="form.dept === NEW_DEPT" v-model="newDeptName" placeholder="新部門名稱，建立商機時一併寫入客戶主檔" style="margin-top: 6px" />
+          <el-input v-if="form.dept === NEW_DEPT" v-model="newDeptName" placeholder="新部門名稱" style="margin-top: 6px" />
+          <p v-if="deptWarning" class="dept-warn">{{ deptWarning }}</p>
+        </el-form-item>
+        <el-form-item label="承辦人">
+          <el-input v-model="form.contact" :disabled="!form.customer" />
         </el-form-item>
         <el-form-item label="需求摘要">
           <el-input v-model="form.product" placeholder="例：FortiGate 200F 高可用組 + 原廠維護" />
@@ -496,13 +520,16 @@ onMounted(() => {
         </el-form-item>
       </el-form>
       <div v-if="conflict" class="conflict">
-        <b>此客戶部門已有進行中的商機</b>
+        <b>撞單：同一位承辦人已有進行中的商機</b>
         <p>{{ conflict.dealNo }} 由 {{ conflict.owner }} 負責，階段「{{ conflict.stage }}」。</p>
+      </div>
+      <div v-else-if="sameDept" class="conflict soft">
+        <b>同部門已有進行中的商機</b>
+        <p>{{ sameDept.dealNo }} 由 {{ sameDept.owner }} 負責，承辦人 {{ personOf(sameDept) || '—' }}。</p>
       </div>
       <template #footer>
         <el-button @click="creating = false">取消</el-button>
-        <el-button v-if="conflict" type="warning" @click="creating = false; ElMessage.info('已通知業務主管判定歸屬')">請主管判定</el-button>
-        <el-button v-else type="primary" :disabled="!form.customer || !form.dept" @click="createDeal">建立商機</el-button>
+        <el-button :type="conflict ? 'warning' : 'primary'" :disabled="!form.customer || !form.dept" @click="createDeal">{{ conflict ? '仍要建立' : '建立商機' }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -691,6 +718,18 @@ onMounted(() => {
 
 .comment {
   max-width: 280px;
+}
+
+.dept-warn {
+  margin: 6px 0 0;
+  color: var(--amber);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.conflict.soft {
+  border-color: var(--line);
+  background: var(--paper);
 }
 
 .conflict {

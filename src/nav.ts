@@ -62,7 +62,7 @@ export const navGroups: NavGroup[] = [
     items: [
       /* 上單送審從導覽拿掉：從商機抽屜的「上單送審」進入；下一階段整合進抽屜 */
       { label: '潛在商機（Pipeline）', path: '/sales/pipeline', ready: true },
-      { roles: ['業務', '業務主管', '執行長', '採購', '財務主管', '會計'], label: '銷售訂單（SO）', path: '/sales/orders', ready: true },
+      { roles: ['業務', '業務主管', '執行長', '採購', '財務主管', '會計', '工程主管', '工程師'], label: '銷售訂單（SO）', path: '/sales/orders', ready: true },
       { roles: ['業務', '業務主管', '執行長', '採購'], label: '客戶管理（CRM）', path: '/sales/customers', ready: true },
       { roles: ['業務', '業務主管', '執行長', '財務主管'], label: '業績與獎金', path: '/sales/performance', ready: true },
     ],
@@ -75,7 +75,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { roles: ['業務', '業務主管', '執行長', '採購', '財務主管', '會計'], label: '採購單（PO）', path: '/purchase/po', ready: true },
       { roles: ['採購', '執行長'], label: 'PO 分配', path: '/purchase/allocate', ready: true },
-      { roles: ['採購', '財務主管', '執行長'], label: '料號與轉撥價', path: '/purchase/transfer-prices', ready: true },
+      { roles: ['採購', '財務主管', '執行長'], label: '料號與品項參考成本', path: '/purchase/transfer-prices', ready: true },
       { roles: ['業務', '業務主管', '採購', '財務主管', '會計', '執行長'], label: '供應商主檔', path: '/purchase/vendors', ready: true },
     ],
   },
@@ -145,6 +145,7 @@ export const navGroups: NavGroup[] = [
       { roles: ['執行長', '財務主管', '系統管理員'], label: '簽核進度設定', path: '/admin/approval-rules', ready: true },
       { roles: ['業務主管', '執行長', '系統管理員'], label: '離職業務交接', path: '/admin/handover', ready: true },
       { roles: ['執行長', '系統管理員'], label: '到期類型', path: '/admin/expiry-kinds', ready: true },
+      { roles: ['執行長', '系統管理員', '業務主管'], label: '自有服務項目', path: '/admin/own-services', ready: true },
       { roles: ['執行長', '系統管理員'], label: '使用者與部門', path: '/admin/users', notes: ['帳號只停用不刪除', '離職指定承接人，代辦自動轉移'] },
       { roles: ['執行長', '財務主管', '系統管理員'], label: '審計紀錄', path: '/admin/audit', notes: ['誰、何時、改了哪些欄位、前後值', '可匯出 Excel'] },
       { roles: ['執行長', '系統管理員'], label: '同步作業監控', path: '/admin/sync', notes: ['與現行 ERP 的同步批次與差異報表'] },

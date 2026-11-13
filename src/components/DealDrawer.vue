@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import NextHistory from './NextHistory.vue'
 import { computed, nextTick, reactive, ref, toRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -7,12 +8,13 @@ import UploadDialog from './UploadDialog.vue'
 import QuoteWorkbench from './QuoteWorkbench.vue'
 import MembersDialog from './MembersDialog.vue'
 import EngSupportCard from './EngSupportCard.vue'
+import CaseComments from './CaseComments.vue'
 import SubmitChecklistCard from './SubmitChecklistCard.vue'
 import MilestoneSummaryCard from './MilestoneSummaryCard.vue'
 import MilestoneDialog from './MilestoneDialog.vue'
 import MarginGauge from './MarginGauge.vue'
 import { useQuoteSubmit } from '../composables/useQuoteSubmit'
-import { deals, quotes, orders, execStages, isOrderClosed, quoteTotal, pipelineStages, stageDefaultProb, type Deal, type Milestone, type PipelineStage } from '../mock/data'
+import { deals, quotes, orders, execStages, isOrderClosed, isGuarantee, guaranteeReasons, quoteTotal, pipelineStages, stageDefaultProb, isIdle, stageIdleDays, type Deal, type Milestone, type PipelineStage, type GuaranteeReason } from '../mock/data'
 import { useAppStore } from '../stores/app'
 import { evaluate, routing } from '../mock/routing'
 import { money, pct, dateTime } from '../utils/format'
@@ -46,19 +48,16 @@ const localComments = computed(() => store.comments)
 const dealComments = computed(() =>
   localComments.value.filter((c) => c.dealId === props.dealId).sort((a, b) => a.at.localeCompare(b.at)),
 )
-const draft = ref('')
-/* 切到留言頁簽就把這個商機對我的提及標為已讀（列表泡泡的紅數字跟著消失） */
-watch([activeTab, () => props.dealId], ([tab, id]) => { if (tab === 'comments' && id) store.markMentionsRead(id) }, { immediate: true })
 
 /* 協作成員：負責業務、主管以外被拉進來的人；工程師由派工加入 */
 const canSeeMoney = computed(() => !!deal.value && store.canSeeMoney(deal.value))
-const canManageMembers = computed(() => !!deal.value && store.canManageMembers(deal.value))
+const frozen = computed(() => deal.value?.stage === 'SO已成立')
+const canManageMembers = computed(() => !!deal.value && !frozen.value && store.canManageMembers(deal.value))
 const members = computed(() => (deal.value ? store.membersOf(deal.value.id) : []))
 const collaborators = computed(() => members.value.filter((m) => m.kind === '協作成員'))
 const memberUser = (id: string) => store.users.find((u) => u.id === id)
-const participants = computed(() => (deal.value ? store.participantsOf(deal.value) : []))
 const membersOpen = ref(false)
-const hasActiveTicket = (m: { engRequestIds?: string[] }) => (deal.value?.engRequests ?? []).some((t) => t.status === '已派工' && m.engRequestIds?.includes(t.id))
+const hasActiveTicket = (m: { engRequestIds?: string[] }) => (deal.value?.engRequests ?? []).some((t) => (t.status === '已派工' || t.status === '待接受') && m.engRequestIds?.includes(t.id))
 const canRemove = (m: { kind: string; engRequestIds?: string[] }) => (m.kind === '工程師' ? store.role === '工程主管' && !hasActiveTicket(m) : canManageMembers.value)
 async function removeMember(userId: string) {
   const d = deal.value
@@ -68,7 +67,6 @@ async function removeMember(userId: string) {
   if (!ok) return
   store.removeMember(d, userId)
 }
-const isMentioningMe = (c: { mentionIds?: string[] }) => !!c.mentionIds?.includes(store.currentUserId)
 /** 工程師在成員區標示負責哪幾張服務單 */
 
 /* 其他附件：合約書、會議紀錄這類；報價單、回簽、廠商報價單都在報價單版本頁簽 */
@@ -77,47 +75,6 @@ const dealFiles = computed(() =>
   deal.value ? store.attachments.filter((a) => a.refNo.startsWith(deal.value!.dealNo) && a.type === '其他' && !a.voided).sort((a, b) => b.at.localeCompare(a.at)) : [],
 )
 const extOf = (f: string) => (f.includes('.') ? f.slice(f.lastIndexOf('.') + 1).toUpperCase() : '—')
-/* 留言頁頂端的人員列：商機參與者（負責業務、主管、成員、工程師、工程主管），點頭像把 @姓名 填進留言 */
-const composerRef = ref<{ focus: () => void } | null>(null)
-const people = computed(() =>
-  participants.value.map((u) => {
-    const m = members.value.find((x) => x.userId === u.id)
-    const kind = deal.value?.ownerId === u.id ? '負責業務' : m?.kind ?? u.role
-    return { u, kind, cls: kind === '負責業務' ? 'owner' : kind === '工程師' ? 'eng' : '' }
-  }),
-)
-function tagPerson(name: string) {
-  const cur = draft.value
-  draft.value = `${cur}${cur && !/\s$/.test(cur) ? ' ' : ''}@${name} `
-  composerRef.value?.focus()
-}
-function postComment() {
-  if (!draft.value.trim() || !props.dealId) return
-  const text = draft.value.trim()
-  localComments.value.push({
-    id: `c-${Date.now()}`,
-    dealId: props.dealId,
-    author: store.currentUser.name,
-    role: store.currentUser.role,
-    at: new Date().toISOString(),
-    text,
-  })
-  /* @ 提及：只能提及商機的參與者（負責業務、主管、成員、工程師）；不在商機的人要先加入 */
-  const outsiders = store.users.filter((u) => u.id !== store.currentUserId && text.includes(`@${u.name}`) && !participants.value.some((p) => p.id === u.id))
-  if (outsiders.length) {
-    ElMessage.warning(`${outsiders.map((u) => u.name).join('、')} 不在這個商機，請先用「加人」加入再提及`)
-    return
-  }
-  const mentioned = participants.value.filter((u) => u.id !== store.currentUserId && text.includes(`@${u.name}`))
-  localComments.value[localComments.value.length - 1]!.mentionIds = mentioned.map((u) => u.id)
-  mentioned.forEach((u) => {
-    store.todos.unshift({ id: `t-${Date.now()}-${u.id}`, kind: '回覆', title: `${store.currentUser.name}在${deal.value?.customer ?? ''}案提及你：${text.replace(`@${u.name}`, '').trim().slice(0, 30)}`, refNo: deal.value?.dealNo ?? '', forRoles: [u.role], forUserIds: [u.id], dealId: props.dealId ?? undefined, createdAt: new Date().toISOString() })
-    store.notifications.unshift({ id: `n-${Date.now()}-${u.id}`, kind: '提及', text: `${store.currentUser.name} 在 ${deal.value?.customer ?? ''} 案提及你：${text.slice(0, 60)}`, at: new Date().toISOString(), read: false, forRoles: [u.role], forUserIds: [u.id] })
-  })
-  draft.value = ''
-  ElMessage.success(mentioned.length ? `留言已送出，${mentioned.map((u) => u.name).join('、')}會收到代辦與通知` : '留言已送出')
-}
-
 /* 基本資料編輯：負責業務或主管可改；SO已成立後鎖定 */
 const editing = ref(false)
 const edit = ref({ stage: '規劃預算' as PipelineStage, prob: 0, amount: 0, expectClose: '', nextAction: '', poc: '', lostReason: '', via: '直接交易' as Deal['via'], endUser: '', kind: '新購' as Deal['kind'], renewalOf: '', renewalReason: '到期續簽' as NonNullable<Deal['renewalReason']>, renewalItems: [] as string[], preOrder: false, prepay: false })
@@ -139,13 +96,7 @@ function saveEdit() {
   if (!d) return
   /* SO 成立後只收下一步，其他欄位唯讀 */
   if (locked.value) {
-    const v = edit.value.nextAction.trim()
-    if (v !== d.nextAction) {
-      localComments.value.push({ id: `c-${Date.now()}`, dealId: d.id, author: store.currentUser.name, role: store.currentUser.role, at: new Date().toISOString(), text: `下一步：${d.nextAction || '（空）'} → ${v || '（空）'}` })
-      d.nextAction = v
-      d.updatedAt = new Date().toISOString()
-      ElMessage.success('下一步已更新')
-    }
+    if (store.setNextAction(d, edit.value.nextAction)) ElMessage.success('下一步已更新')
     editing.value = false
     return
   }
@@ -178,6 +129,9 @@ function saveEdit() {
   }
   const prepayTurnedOn = !d.prepay && edit.value.prepay
   const lostNow = d.stage !== '未成交' && edit.value.stage === '未成交'
+  const now = new Date().toISOString()
+  if (d.stage !== edit.value.stage) d.stageAt = now
+  if (d.nextAction !== edit.value.nextAction.trim()) d.nextHistory = [...(d.nextHistory ?? []), { at: now, by: store.currentUser.name, text: edit.value.nextAction.trim() }]
   const preOrderTurnedOn = !d.preOrder && edit.value.preOrder
   Object.assign(d, {
     stage: edit.value.stage,
@@ -222,6 +176,15 @@ function saveEdit() {
   ElMessage.success(changes.length ? `已儲存並記錄異動：${changes.join('、')}` : '沒有變更')
 }
 
+/* 閒置釋放：主管手動，設未成交；同承辦人的防撞佔位跟著解除 */
+async function release() {
+  const d = deal.value
+  if (!d) return
+  const { value } = await ElMessageBox.prompt(`${d.customer} ${d.customerDept} 階段「${d.stage}」已 ${stageIdleDays(d)} 天沒變。釋放後設為未成交。`, '釋放閒置商機', { inputPlaceholder: '備註（選填）', confirmButtonText: '釋放', cancelButtonText: '取消' }).then((r) => ({ value: r.value ?? '' }), () => ({ value: null as string | null }))
+  if (value === null) return
+  if (store.releaseIdle(d, value.trim())) ElMessage.success(`${d.dealNo} 已釋放`)
+}
+
 /* 續約：原商機與它的 SO；反向列出以這筆為原案的續約商機 */
 const renewalOf = computed(() => (deal.value?.renewalOfDealId ? deals.find((x) => x.id === deal.value!.renewalOfDealId) : undefined))
 const renewalOfOrder = computed(() => (renewalOf.value ? orders.find((o) => o.dealId === renewalOf.value!.id) : undefined))
@@ -235,7 +198,23 @@ watch(() => edit.value.renewalOf, (id, prev) => { if (editing.value && id !== pr
 const canCollab = computed(() => !!deal.value && deal.value.stage !== '未成交' && (deal.value.ownerId === store.currentUserId || ['業務主管', '執行長'].includes(store.role)))
 
 /* 報價單版本工作區在 QuoteWorkbench；這裡只接送審、簽核單與系統留言 */
-const dealOrder = computed(() => (deal.value ? orders.find((o) => o.dealId === deal.value!.id) : undefined))
+const dealOrder = computed(() => (deal.value ? orders.find((o) => o.dealId === deal.value!.id && !o.voidedAt) : undefined))
+/* 保證單：客戶已回簽 v、還沒送審、還沒有 SO 或保證單時，可以先轉保證單（不計業績、可派工） */
+const signedQuote = computed(() => [...dealQuotes.value].filter((q) => q.status === '報價回簽').sort((a, b) => b.version - a.version)[0])
+const canGuarantee = computed(() => !!signedQuote.value && !signedQuote.value.submittedAt && !dealOrder.value && canEditQuote.value && !store.approvals.some((a) => a.dealId === deal.value?.id && a.type === '上單' && a.status === '待簽核'))
+const gOpen = ref(false)
+const gForm = ref<{ reason: GuaranteeReason; note: string }>({ reason: '議價中', note: '' })
+function startGuarantee() {
+  gForm.value = { reason: deal.value?.preOrder ? '預下單' : '議價中', note: '' }
+  gOpen.value = true
+}
+function submitGuarantee() {
+  const d = deal.value
+  if (!d) return
+  const g = store.createGuarantee(d, gForm.value.reason, gForm.value.note)
+  gOpen.value = false
+  if (g) ElMessage.success(`已轉保證單 ${g.soNo}，不計業績；議價完成後照常上單送審`)
+}
 const canEditQuote = computed(
   () => !!deal.value && deal.value.stage !== 'SO已成立' && deal.value.stage !== '未成交' && (deal.value.ownerId === store.currentUserId || ['業務主管', '執行長'].includes(store.role)),
 )
@@ -337,21 +316,31 @@ const stageTag: Record<string, string> = {
           <div class="eyebrow">
             <span class="num">{{ deal.dealNo }}</span>
             <span class="tag" :class="stageTag[deal.stage]">{{ deal.stage }}</span>
-            <span v-if="dealOrder" class="tag slate" :title="dealOrder.soNo">{{ dealOrder.soNo }} · {{ isOrderClosed(dealOrder) ? '結案' : execStages[dealOrder.stageIndex] }}</span>
+            <button v-if="dealOrder && isGuarantee(dealOrder)" type="button" class="tag amber link" :title="`開啟保證單 ${dealOrder.soNo}`" @click="openOrder(dealOrder.soNo)">保證單 {{ dealOrder.soNo }} · {{ dealOrder.guaranteeReason }}</button>
+            <span v-else-if="dealOrder" class="tag slate" :title="dealOrder.soNo">{{ dealOrder.soNo }} · {{ isOrderClosed(dealOrder) ? '結案' : execStages[dealOrder.stageIndex] }}</span>
             <span v-if="deal.kind !== '新購'" class="tag slate">{{ deal.kind }}</span>
             <button v-if="renewalOf" type="button" class="tag teal link" :title="`開啟原商機 ${renewalOf.dealNo}`" @click="emit('open', renewalOf.id)">續約自 {{ renewalOf.dealNo }}<template v-if="renewalOfOrder"> · {{ renewalOfOrder.soNo }}</template></button>
             <button v-for="r in renewals" :key="r.id" type="button" class="tag teal link" :title="`開啟續約商機 ${r.dealNo}`" @click="emit('open', r.id)">續約商機 {{ r.dealNo }} · {{ r.stage }}</button>
             <span v-if="deal.via === '中間商'" class="tag slate">經中間商</span>
+            <span v-if="isIdle(deal)" class="tag red">閒置 {{ stageIdleDays(deal) }} 天</span>
+            <span v-if="deal.collision" class="tag amber" :title="`與 ${deals.find((x) => x.id === deal!.collision!.withDealId)?.dealNo ?? ''} 同承辦人`">撞單 {{ deals.find((x) => x.id === deal!.collision!.withDealId)?.dealNo }}</span>
           </div>
           <h2>{{ deal.customer }}<span class="dept">{{ deal.customerDept }}</span></h2>
           <p class="muted">{{ deal.product }}</p>
         </div>
         <div class="head-actions">
+          <el-button v-if="store.canReleaseIdle(deal)" type="danger" plain @click="release">釋放</el-button>
           <el-button v-if="canSeeMoney && deal.prepay && !deal.prepayApprovalId && deal.stage !== '未成交' && canEditQuote" @click="startPrepay">申請預付款</el-button>
           <span v-else-if="deal.prepayApprovalId" class="tag amber">預付款簽核中</span>
+          <el-button v-if="canGuarantee" @click="startGuarantee">轉保證單</el-button>
           <el-button @click="emit('close')">關閉</el-button>
         </div>
       </header>
+
+      <div v-if="frozen && dealOrder" class="frozen-bar">
+        <span>已轉 <b class="num">{{ dealOrder.soNo }}</b></span>
+        <el-button size="small" type="primary" @click="openOrder(dealOrder.soNo)">前往 SO</el-button>
+      </div>
 
       <el-tabs v-model="activeTab" class="tabs">
         <el-tab-pane label="基本資料" name="basic">
@@ -375,7 +364,7 @@ const stageTag: Record<string, string> = {
           </template>
           <dt>預計成交</dt><dd class="num">{{ deal.expectClose }}</dd>
           <dt>POC 狀態</dt><dd>{{ deal.poc || '無' }}</dd>
-          <dt>下一步</dt><dd>{{ deal.nextAction }}</dd>
+          <dt>下一步</dt><dd>{{ deal.nextAction }}<NextHistory :deal="deal" /></dd>
           <dt>類型</dt><dd>{{ deal.kind }}<template v-if="renewalOf"> | 續約自 {{ renewalOf.dealNo }}<template v-if="renewalOfOrder">（{{ renewalOfOrder.soNo }}）</template></template></dd>
           <template v-if="renewalItemLabels.length"><dt>續約項目</dt><dd><div v-for="x in renewalItemLabels" :key="x" class="id">{{ x }}</div></dd></template>
           <dt>交易方式</dt><dd>{{ deal.via }}<template v-if="deal.endUser">，終端使用者 {{ deal.endUser }}</template></dd>
@@ -437,7 +426,7 @@ const stageTag: Record<string, string> = {
                 </ul>
                 </div>
               </section>
-              <EngSupportCard :deal="deal" :can-edit="canCollab && canSeeMoney" />
+              <EngSupportCard :deal="deal" :can-edit="canCollab && canSeeMoney && !frozen" :readonly="frozen" />
           </div>
         </el-tab-pane>
 
@@ -449,35 +438,14 @@ const stageTag: Record<string, string> = {
 
         <el-tab-pane :label="`留言（${dealComments.length}）`" name="comments">
           <div class="section">
-            <!-- 人員列：點頭像幫他 tag；加人入口也在這 -->
-            <div class="people-bar">
-              <button v-for="x in people" :key="x.u.id" type="button" class="avatar" :class="x.cls" :title="`${x.u.name} · ${x.kind}${x.u.id === store.currentUserId ? '（你）' : '，點一下 @ 他'}`" :disabled="x.u.id === store.currentUserId" @click="tagPerson(x.u.name)">{{ x.u.name.slice(0, 1) }}</button>
-              <button v-if="canManageMembers" type="button" class="avatar add" title="加入協作成員" @click="membersOpen = true"><el-icon><Plus /></el-icon></button>
-            </div>
-            <ul class="comments">
-              <li v-for="c in dealComments" :key="c.id" :class="{ me: isMentioningMe(c) }">
-                <div class="c-head">
-                  <b>{{ c.author }}</b>
-                  <span class="muted">{{ c.role }} · {{ dateTime(c.at) }}</span>
-                </div>
-                <p class="c-text">{{ c.text }}</p>
-                <span v-if="c.attachment" class="file"><el-icon><Paperclip /></el-icon>{{ c.attachment }}</span>
-              </li>
-            </ul>
-            <div class="composer">
-              <el-input ref="composerRef" v-model="draft" type="textarea" :rows="3" placeholder="輸入留言；@ 提及商機參與者會建立代辦並即時通知" />
-              <div class="composer-actions">
-                <el-button size="small" :icon="Paperclip">附加檔案</el-button>
-                <el-button size="small" type="primary" @click="postComment">送出留言</el-button>
-              </div>
-            </div>
+            <CaseComments :deal="deal" :readonly="frozen" :can-manage-members="canManageMembers" :active="activeTab === 'comments'" @add-member="membersOpen = true" />
           </div>
         </el-tab-pane>
 
         <el-tab-pane :label="`其他附件（${dealFiles.length}）`" name="files">
           <div class="section">
             <div class="files-head">
-              <el-button type="primary" :icon="Upload" @click="uploading = true">上傳附件</el-button>
+              <el-button v-if="!frozen" type="primary" :icon="Upload" @click="uploading = true">上傳附件</el-button>
             </div>
             <table class="plain-table">
               <thead><tr><th>檔案名稱</th><th>類型</th><th>上傳者</th><th>時間</th><th class="num">大小</th></tr></thead>
@@ -579,6 +547,22 @@ const stageTag: Record<string, string> = {
     <MilestoneDialog v-model="msOpen" :milestones="qs.milestones" :total="qs.revenue" :title="deal ? `${deal.dealNo} 請款條件` : ''" @save="saveMilestones" />
     <UploadDialog v-if="deal" v-model="uploading" :ref-no="deal.dealNo" :party="deal.customer" simple title="上傳其他附件" />
 
+    <el-dialog v-model="gOpen" title="轉保證單" width="480px" append-to-body>
+      <el-form label-position="top">
+        <el-form-item label="原因" required>
+          <el-radio-group v-model="gForm.reason">
+            <el-radio-button v-for="r in guaranteeReasons" :key="r" :value="r">{{ r }}</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="備註">
+          <el-input v-model="gForm.note" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="gOpen = false">取消</el-button>
+        <el-button type="primary" @click="submitGuarantee">轉保證單</el-button>
+      </template>
+    </el-dialog>
     <el-dialog v-model="prepayOpen" title="申請預付款" width="480px">
       <el-form label-position="top">
         <el-form-item label="預付金額" required><el-input-number v-model="prepayForm.amount" :min="0" :step="10000" style="width: 100%" /><span class="muted small">報價合計 {{ money(latestTotal) }}</span></el-form-item>
@@ -973,6 +957,18 @@ const stageTag: Record<string, string> = {
   color: var(--muted);
   padding: 20px 0;
   text-align: center;
+}
+
+.frozen-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 24px;
+  background: var(--teal-soft);
+  color: var(--teal-ink);
+  font-size: 13px;
+  border-bottom: 1px solid var(--line);
 }
 
 .files-head {

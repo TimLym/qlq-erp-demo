@@ -20,7 +20,12 @@ for (const o of orders) {
   if (!d) issues.push(`訂單 ${o.soNo} 的商機 ${o.dealId} 不存在`)
   else {
     if (d.dealNo !== o.dealNo) issues.push(`訂單 ${o.soNo} 商機編號 ${o.dealNo} ≠ 商機 ${d.dealNo}`)
-    if (d.stage !== 'SO已成立') issues.push(`訂單 ${o.soNo} 存在（SO 只在上單核准後產生），商機 ${d.dealNo} 階段應為SO已成立，實際 ${d.stage}`)
+    if (o.phase === '保證單') {
+      if (!o.soNo.startsWith('PRE-') || o.guaranteeNo !== o.soNo) issues.push(`保證單 ${o.soNo} 編號應為 PRE- 開頭且與 guaranteeNo 一致`)
+      if (!o.voidedAt && (d.stage === 'SO已成立' || d.stage === '未成交')) issues.push(`保證單 ${o.soNo} 進行中，商機 ${d.dealNo} 不該是 ${d.stage}`)
+      if (o.voidedAt && d.stage !== '未成交') issues.push(`保證單 ${o.soNo} 已作廢，商機 ${d.dealNo} 應為未成交`)
+      if (!quotes.some((q) => q.id === o.quoteId && q.status === '報價回簽')) issues.push(`保證單 ${o.soNo} 應對應客戶已回簽的報價版本`)
+    } else if (d.stage !== 'SO已成立') issues.push(`訂單 ${o.soNo} 存在（SO 只在上單核准後產生），商機 ${d.dealNo} 階段應為SO已成立，實際 ${d.stage}`)
     if (o.stageIndex < 0 || o.stageIndex > 6) issues.push(`訂單 ${o.soNo} 的 stageIndex ${o.stageIndex} 超出 0–6（接單…驗收）`)
     if (d.customer !== o.customer) issues.push(`訂單 ${o.soNo} 客戶 ${o.customer} ≠ 商機 ${d.customer}`)
   }
@@ -32,6 +37,15 @@ for (const d of deals) {
   for (const t of d.engRequests ?? []) {
     if (!t.requestNo.startsWith(d.dealNo)) issues.push(`服務單 ${t.requestNo} 不屬於商機 ${d.dealNo}`)
     if (t.status === '待派工' && !todos.some((x) => x.kind === '派工' && x.engRequestId === t.id)) issues.push(`服務單 ${t.requestNo} 待派工但工程主管沒有派工代辦`)
+    const grp = (m.engGroups ?? []).find((g) => g.id === t.groupId)
+    if (t.groupId && !grp) issues.push(`服務單 ${t.requestNo} 派給不存在的組`)
+    if (t.status === '待派工' && grp && !todos.some((x) => x.kind === '派工' && x.engRequestId === t.id && x.forUserIds?.includes(grp.leaderId))) issues.push(`服務單 ${t.requestNo} 派給${grp.name}但組長沒有派工代辦`)
+    if (t.status === '待接受') {
+      if (!t.assigneeIds.length) issues.push(`服務單 ${t.requestNo} 待接受但沒有工程師`)
+      if (t.assigneeIds.every((id) => t.acceptedIds?.includes(id))) issues.push(`服務單 ${t.requestNo} 全部接受了卻還是待接受`)
+      for (const id of t.assigneeIds.filter((x) => !t.acceptedIds?.includes(x))) if (!todos.some((x) => x.kind === '工程' && x.engRequestId === t.id && x.forUserIds?.includes(id) && x.title.startsWith('待接受'))) issues.push(`服務單 ${t.requestNo} 的 ${id} 沒有待接受代辦`)
+    }
+    if (t.suggestedId && !m.users.some((u) => u.id === t.suggestedId && u.role === '工程師')) issues.push(`服務單 ${t.requestNo} 建議的工程師不存在`)
     if (t.status === '已派工') {
       if (!t.assigneeIds.length) issues.push(`服務單 ${t.requestNo} 已派工但沒有工程師`)
       for (const id of t.assigneeIds) {
@@ -41,7 +55,7 @@ for (const d of deals) {
     }
   }
   for (const m of dealMembers.filter((m) => m.dealId === d.id && m.kind === '工程師')) {
-    if (!(d.engRequests ?? []).some((t) => (t.status === '已派工' || t.status === '已完成') && t.assigneeIds.includes(m.userId))) issues.push(`商機 ${d.dealNo} 的工程支援人員 ${m.userId} 沒有派過的服務單`)
+    if (!(d.engRequests ?? []).some((t) => (t.status === '待接受' || t.status === '已派工' || t.status === '已完成') && t.assigneeIds.includes(m.userId))) issues.push(`商機 ${d.dealNo} 的工程支援人員 ${m.userId} 沒有派過的服務單`)
   }
 }
 // 續約商機 → 原商機要存在、同客戶、已成立 SO
@@ -107,12 +121,27 @@ for (const d of deals) {
 const taxIds = customers.map((c) => c.taxId)
 if (new Set(taxIds).size !== taxIds.length) issues.push('客戶主檔統編重複')
 const { stock } = m
+for (const h of m.stockHolds ?? []) {
+  if (!deals.find((d) => d.id === h.dealId && d.dealNo === h.dealNo)) issues.push(`預留 ${h.id} 對不到商機`)
+  if (h.status === '保留中' && (!h.allocs?.length || !h.expiresAt || !h.approvedAt)) issues.push(`預留 ${h.id} 保留中但缺批次、到期日或核准時間`)
+  if (h.status === '保留中' && h.allocs?.reduce((n, a) => n + a.qty, 0) !== h.qty) issues.push(`預留 ${h.id} 各批數量加總不等於申請數量`)
+  for (const a of h.status === '保留中' ? h.allocs ?? [] : []) {
+    const lot = stock.find((x) => x.batch === a.batch)
+    if (!lot || lot.sku !== h.sku || lot.reservedFor !== h.dealNo || lot.reserved !== a.qty) issues.push(`預留 ${h.id} 批次 ${a.batch} 對不上`)
+  }
+}
+for (const q of quotes) for (const l of q.lines) {
+  if (l.vendor === '自有工程' && m.ownServices && !m.ownServices.some((x) => x.code === l.intSku)) issues.push(`報價 ${q.id} 自有工程項次 ${l.intSku} 不在自有服務項目主檔`)
+}
 for (const st of stock) {
   if (st.reserved > st.qty) issues.push(`庫存批次 ${st.batch} 保留 ${st.reserved} 超過數量 ${st.qty}`)
   if (st.reservedFor) {
     const o = orders.find((x) => x.soNo === st.reservedFor)
-    if (!o) issues.push(`庫存批次 ${st.batch} 保留給不存在的 ${st.reservedFor}`)
-    else {
+    /* 報價階段的預留貨：保留給商機編號，要有保留中的申請且數量對得上 */
+    const held = (m.stockHolds ?? []).filter((h) => h.status === '保留中' && h.dealNo === st.reservedFor).flatMap((h) => h.allocs ?? []).filter((a) => a.batch === st.batch)
+    if (!o && !held.length) issues.push(`庫存批次 ${st.batch} 保留給不存在的 ${st.reservedFor}`)
+    if (!o && held.length && held.reduce((n, a) => n + a.qty, 0) !== st.reserved) issues.push(`庫存批次 ${st.batch} 保留量和預留申請對不上`)
+    else if (o) {
       const q = quotes.find((x) => x.id === o.quoteId)
       if (q && !q.lines.some((l) => l.intSku === st.sku)) issues.push(`庫存批次 ${st.batch}（${st.sku}）保留給 ${st.reservedFor}，但該訂單不需要這個料號`)
     }

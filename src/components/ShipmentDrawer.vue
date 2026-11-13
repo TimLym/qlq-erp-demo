@@ -168,7 +168,7 @@ function onScanned(fileName: string) {
           </ul>
         </section>
 
-        <section v-if="targets.length" class="block">
+        <section v-if="targets.length || !resigning" class="block">
           <h3>簽收方式</h3>
           <el-radio-group v-model="method" class="methods">
             <el-radio-button value="ipad">iPad 現場簽名</el-radio-button>

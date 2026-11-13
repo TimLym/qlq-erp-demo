@@ -46,13 +46,13 @@ function submit() {
   const r = editing.value
   if (!r) return
   if (form.value.price <= 0 || !form.value.reason.trim()) {
-    ElMessage.warning('轉撥價要大於 0，原因必填')
+    ElMessage.warning('品項參考成本要大於 0，原因必填')
     return
   }
   const now = new Date()
   const id = `tp-${now.getTime()}`
   const approvalId = `a-${now.getTime()}-tp`
-  const ev = evaluate('轉撥價', { applicantId: store.currentUserId, facts: { amount: form.value.price, changePct: r.price ? (Math.abs(form.value.price - r.price) / r.price) * 100 : 0 } })
+  const ev = evaluate('品項參考成本', { applicantId: store.currentUserId, facts: { amount: form.value.price, changePct: r.price ? (Math.abs(form.value.price - r.price) / r.price) * 100 : 0 } })
   const change: TransferChange = {
     id,
     sku: r.sku,
@@ -69,8 +69,8 @@ function submit() {
   transferChanges.unshift(change)
   store.approvals.unshift({
     id: approvalId,
-    type: '轉撥價',
-    title: `轉撥價：${r.name}（${r.sku}）${r.price !== undefined ? `${money(r.price)} → ` : ''}${money(form.value.price)}${form.value.promoUntil ? `，促銷至 ${form.value.promoUntil}` : ''}`,
+    type: '品項參考成本',
+    title: `品項參考成本：${r.name}（${r.sku}）${r.price !== undefined ? `${money(r.price)} → ` : ''}${money(form.value.price)}${form.value.promoUntil ? `，促銷至 ${form.value.promoUntil}` : ''}`,
     refNo: r.sku,
     submitterId: store.currentUserId,
     submitter: store.currentUser.name,
@@ -83,13 +83,13 @@ function submit() {
     status: '待簽核',
     reason: change.reason,
     diff: [
-      { field: '轉撥價', before: r.price !== undefined ? money(r.price) : '（未設定）', after: money(form.value.price) },
+      { field: '品項參考成本', before: r.price !== undefined ? money(r.price) : '（未設定）', after: money(form.value.price) },
       ...(r.fifo !== undefined ? [{ field: '目前先進先出批次成本', before: money(r.fifo), after: money(r.fifo) }] : []),
       ...(r.lastPoCost !== undefined ? [{ field: '最近 PO 成本', before: money(r.lastPoCost), after: money(r.lastPoCost) }] : []),
     ],
     history: [{ role: store.role, name: store.currentUser.name, action: '送出', at: now.toISOString() }],
   })
-  store.todos.unshift({ id: `t-${now.getTime()}-tp`, kind: '簽核', title: `轉撥價：${r.name} ${money(form.value.price)}`, refNo: r.sku, forRoles: [ev.route[0]!], forUserIds: ev.steps[0]?.candidateIds, approvalId, createdAt: now.toISOString() })
+  store.todos.unshift({ id: `t-${now.getTime()}-tp`, kind: '簽核', title: `品項參考成本：${r.name} ${money(form.value.price)}`, refNo: r.sku, forRoles: [ev.route[0]!], forUserIds: ev.steps[0]?.candidateIds, approvalId, createdAt: now.toISOString() })
   editing.value = null
   ElMessage.success('已送財務主管核准；核准前送審的案仍用舊價，核准後新送審的案才用新價')
 }
@@ -101,13 +101,13 @@ const history = computed(() => [...transferChanges].sort((a, b) => b.at.localeCo
   <div class="page">
     <div class="page-head">
       <div>
-        <h1>料號與轉撥價</h1>
+        <h1>料號與品項參考成本</h1>
       </div>
     </div>
 
     <section class="panel">
       <table class="plain-table">
-        <thead><tr><th>料號</th><th class="num">轉撥價</th><th class="num">先進先出批次成本</th><th class="num">加權平均</th><th class="num">最近 PO 成本</th><th class="num">差異</th><th class="num">庫存</th><th>最後更新</th><th></th></tr></thead>
+        <thead><tr><th>料號</th><th class="num">品項參考成本</th><th class="num">先進先出批次成本</th><th class="num">加權平均</th><th class="num">最近 PO 成本</th><th class="num">差異</th><th class="num">庫存</th><th>最後更新</th><th></th></tr></thead>
         <tbody>
           <tr v-for="r in rows" :key="r.sku">
             <td><b>{{ r.name }}</b><div class="muted small">{{ r.sku }}</div></td>
@@ -146,15 +146,15 @@ const history = computed(() => [...transferChanges].sort((a, b) => b.at.localeCo
       </table>
     </section>
 
-    <el-dialog :model-value="!!editing" :title="editing ? `${editing.price === undefined ? '設定' : '調整'}轉撥價：${editing.name}` : ''" width="520px" @update:model-value="(v: boolean) => { if (!v) editing = null }">
+    <el-dialog :model-value="!!editing" :title="editing ? `${editing.price === undefined ? '設定' : '調整'}品項參考成本：${editing.name}` : ''" width="520px" @update:model-value="(v: boolean) => { if (!v) editing = null }">
       <template v-if="editing">
         <dl class="ref">
-          <dt>目前轉撥價</dt><dd class="num">{{ editing.price !== undefined ? money(editing.price) : '未設定' }}</dd>
+          <dt>目前品項參考成本</dt><dd class="num">{{ editing.price !== undefined ? money(editing.price) : '未設定' }}</dd>
           <dt>先進先出批次成本</dt><dd class="num">{{ editing.fifo !== undefined ? money(editing.fifo) : '—' }}</dd>
           <dt>最近 PO 成本</dt><dd class="num">{{ editing.lastPoCost !== undefined ? money(editing.lastPoCost) : '—' }}</dd>
         </dl>
         <el-form label-position="top">
-          <el-form-item label="新轉撥價" required><el-input-number v-model="form.price" :min="0" :step="1000" style="width: 100%" /></el-form-item>
+          <el-form-item label="新品項參考成本" required><el-input-number v-model="form.price" :min="0" :step="1000" style="width: 100%" /></el-form-item>
           <el-form-item label="原因" required><el-input v-model="form.reason" placeholder="例：原廠 11 月牌價調整；出清 2026-03 批次" /></el-form-item>
           <el-form-item label="促銷有效期（到期自動回復）"><el-date-picker v-model="form.promoUntil" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item>
         </el-form>

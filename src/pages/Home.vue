@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { ArrowRight } from '@element-plus/icons-vue'
 import { useAppStore } from '../stores/app'
-import { shipments } from '../mock/data'
+import { shipments, isGuarantee, dueToRequest, overduePay } from '../mock/data'
 import { YEAR, YEARS, depts, deptOf, repSummary, deptSummary, companySummary, type Dept, type Summary } from '../mock/performance'
 import { money, pct, dateTime } from '../utils/format'
 import KpiBars from '../components/KpiBars.vue'
@@ -75,6 +75,20 @@ const waitingShipments = computed(() =>
     .sort((a, b) => b.days - a.days),
 )
 const expiring = computed(() => store.myExpiring)
+/* 預留貨 3 天內到期（到期自動釋放） */
+const holdsSoon = computed(() => store.myHoldsExpiring)
+/* 待送開票：到了預計開票日、還沒通知財務開票的期數（業務常口頭講沒送系統） */
+const toBill = computed(() =>
+  ['業務', '業務主管', '執行長'].includes(store.role)
+    ? store.scopedOrders.filter((o) => !isGuarantee(o)).flatMap((o) => dueToRequest(o, TODAY.toISOString().slice(0, 10)).map((m) => ({ o, m, i: o.milestones.indexOf(m) }))).sort((a, b) => (a.m.planInvoiceAt ?? '').localeCompare(b.m.planInvoiceAt ?? ''))
+    : [],
+)
+/* 逾期未收：過了預計付款日還沒收款的期數（業務追款、財務對帳） */
+const overdue = computed(() =>
+  ['業務', '業務主管', '執行長', '財務主管', '會計'].includes(store.role)
+    ? store.scopedOrders.filter((o) => !isGuarantee(o) && store.canSeeOrderMoney(o)).flatMap((o) => overduePay(o, TODAY.toISOString().slice(0, 10)).map((m) => ({ o, m }))).sort((a, b) => (a.m.planPayAt ?? '').localeCompare(b.m.planPayAt ?? ''))
+    : [],
+)
 const inbox = computed<{ key: string; label: string; n: number; to: string; preview: string; urgent?: boolean }[]>(() => {
   const pending = store.pendingForMe
   const waiting = store.waitingOnOthers
@@ -83,7 +97,8 @@ const inbox = computed<{ key: string; label: string; n: number; to: string; prev
   const md = store.unreadMentionDeals[0]
   const mention = { key: 'mention', label: '提及我', n: store.unreadMentionTotal, to: md ? `/sales/pipeline?deal=${md.id}&tab=comments` : '/sales/pipeline', preview: md ? `${md.customer} ${md.product}，${store.unreadMentions(md.id).length} 則` : '' }
   const dispatch = store.myTodos.filter((t) => t.kind === '派工')
-  const engJobs = store.myTodos.filter((t) => t.kind === '工程')
+  /* 工程師當組長時也會收到派工代辦，一併算在工程支援 */
+  const engJobs = store.myTodos.filter((t) => t.kind === '工程' || (store.role === '工程師' && t.kind === '派工'))
   if (store.role === '工程主管' || store.role === '工程師') {
     return [
       { key: 'dispatch', label: store.role === '工程主管' ? '待派工' : '工程支援', n: (store.role === '工程主管' ? dispatch : engJobs).length, to: '/sales/pipeline', preview: (store.role === '工程主管' ? dispatch : engJobs)[0]?.title ?? '', urgent: dispatch.some((t) => t.title.includes('急件')) },
@@ -97,6 +112,9 @@ const inbox = computed<{ key: string; label: string; n: number; to: string; prev
     { key: 'waiting', label: '等待他人', n: waiting.length, to: '/approvals/mine', preview: waiting[0] ? `${waiting[0].title}，在${waiting[0].route[waiting[0].currentStep]}手上` : '' },
     mention,
     { key: 'signoff', label: '等待簽收', n: waitingShipments.value.length, to: '/approvals/signoff', preview: ship ? `${ship.s.customer} 已等 ${ship.days} 天` : '', urgent: !!ship && ship.days > 14 },
+    ...(toBill.value.length || ['業務', '業務主管', '執行長'].includes(store.role) ? [{ key: 'bill', label: '待送開票', n: toBill.value.length, to: toBill.value.length === 1 ? `/sales/orders?so=${toBill.value[0]!.o.soNo}` : '/sales/orders', preview: toBill.value[0] ? `${toBill.value[0].o.customer} 第 ${toBill.value[0].i + 1} 期 ${toBill.value[0].m.label}，預計 ${(toBill.value[0].m.planInvoiceAt ?? '').slice(5).replace('-', '/')}` : '', urgent: toBill.value.length > 0 }] : []),
+    ...(holdsSoon.value.length ? [{ key: 'hold', label: '預留貨將到期', n: holdsSoon.value.length, to: '/inventory', preview: `${holdsSoon.value[0]!.sku} × ${holdsSoon.value[0]!.qty}，${holdsSoon.value[0]!.expiresAt!.slice(5).replace('-', '/')} 到期釋放`, urgent: true }] : []),
+    ...(overdue.value.length ? [{ key: 'overdue', label: '逾期未收', n: overdue.value.length, to: overdue.value.length === 1 ? `/sales/orders?so=${overdue.value[0]!.o.soNo}` : '/sales/orders?fin=逾期未收', preview: `${overdue.value[0]!.o.customer} ${overdue.value[0]!.m.label}，${overdue.value[0]!.m.planPayAt!.slice(5).replace('-', '/')} 應收`, urgent: true }] : []),
     { key: 'expiry', label: '到期', n: expiring.value.length, to: expiring.value.length === 1 && exp ? `/inventory/licenses?lic=${exp.l.id}` : '/inventory/licenses', preview: exp ? `${exp.o.customer} ${exp.l.name}，${exp.l.expires.slice(5).replace('-', '/')} 到期` : '', urgent: !!exp && exp.left < 0 },
   ]
 })

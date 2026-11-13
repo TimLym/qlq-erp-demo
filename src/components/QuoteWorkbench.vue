@@ -5,7 +5,7 @@ import { Paperclip, Upload, Plus, Delete, View, Download, DArrowLeft, DArrowRigh
 import UploadDialog from './UploadDialog.vue'
 import { routing } from '../mock/routing'
 import { useQuoteSubmit } from '../composables/useQuoteSubmit'
-import { quotes, orders, transferOf, vendors, milestonesFromTemplate, quoteTotal, lineCost, type Quote, type QuoteItem, type QuoteLine, type LineNature, natureOf, hasExpiry } from '../mock/data'
+import { quotes, orders, transferOf, vendors, milestonesFromTemplate, quoteTotal, quoteTaxTotal, lineCost, ownServices, stockHolds, TAX_RATE, type Quote, type QuoteItem, type QuoteLine, type LineNature, natureOf, hasExpiry } from '../mock/data'
 import { useAppStore } from '../stores/app'
 import { money, pct } from '../utils/format'
 
@@ -24,7 +24,7 @@ const store = useAppStore()
 const activeQuoteId = ref<string>(props.initialQuoteId ?? '')
 watch(() => props.initialQuoteId, (id) => { if (id) activeQuoteId.value = id })
 const core = useQuoteSubmit(toRef(props, 'dealId'), activeQuoteId)
-const { deal, dealQuotes, q, canNewVersion, changeOrder, isChangeQuote, draftEditable, internalEditable, isRetry, baseQuote, isReturned, lineEditable, lastReturnNote, superseded, withTax, revenue, cost, margin, linesOf, itemRevenue, itemCost, itemCostKnown, itemMargin, stockPart, buyPart, lineUnitCost, missingCost, needsFile, missingFiles, stockFor, canUseStock, stockMode, setStockMode, diff } = core
+const { deal, dealQuotes, q, canNewVersion, changeOrder, isChangeQuote, draftEditable, internalEditable, isRetry, baseQuote, isReturned, lineEditable, lastReturnNote, superseded, withTax, revenue, revenueTax, itemTax, cost, margin, linesOf, itemRevenue, itemCost, itemCostKnown, itemMargin, stockPart, buyPart, lineUnitCost, missingCost, needsFile, missingFiles, stockFor, canUseStock, stockMode, setStockMode, diff } = core
 
 /** 已有草稿就不能再複製新版本 */
 const hasDraft = computed(() => dealQuotes.value.some((x) => x.status === '草稿'))
@@ -47,9 +47,66 @@ const isOwn = (l: QuoteLine) => l.vendor === '自有工程'
 function setOwn(l: QuoteLine, own: boolean) {
   l.vendor = own ? '自有工程' : ''
   l.vendorQuoteFile = undefined
-  if (own) l.stockQty = 0
+  l.bargaining = undefined
+  if (own) {
+    l.stockQty = 0
+    l.intSku = ''
+    l.unitCost = null
+  }
 }
-const blankItem = (no: number): QuoteItem => ({ no, custSku: '', custName: '', desc: '', qty: 1, unitPrice: 0 })
+/* 自有服務項目：選了就帶 SKU、名稱與標準成本，成本不讓業務改 */
+const activeServices = computed(() => ownServices.filter((x) => x.active))
+const serviceOf = (l: QuoteLine) => ownServices.find((x) => x.code === l.intSku)
+function pickService(l: QuoteLine, code: string) {
+  const svc = ownServices.find((x) => x.code === code)
+  if (!svc) return
+  l.intSku = svc.code
+  l.extName = svc.name
+  l.unitCost = svc.cost
+  l.nature = '單次服務'
+}
+
+/* ---------- 含稅發起：輸入含稅單價，未稅單價換算（合計以含稅加總） ---------- */
+const taxIn = computed(() => q.value?.taxMode === '含稅')
+async function setTaxMode(mode: '未稅' | '含稅') {
+  const x = q.value
+  if (!x || (x.taxMode ?? '未稅') === mode) return
+  if (mode === '未稅' && x.items.some((i) => (i.unitPriceTax ?? 0) > 0)) {
+    const before = quoteTotal(x)
+    const after = x.items.reduce((n, i) => n + i.qty * Math.round(i.unitPrice), 0)
+    if (before !== after) {
+      const ok = await ElMessageBox.confirm(`未稅單價會四捨五入成整數，未稅合計 ${money(before)} 變成 ${money(after)}。`, '改回未稅發起', { confirmButtonText: '改回未稅', cancelButtonText: '取消', type: 'warning' }).then(() => true, () => false)
+      if (!ok) return
+    }
+  }
+  x.taxMode = mode === '含稅' ? '含稅' : undefined
+  x.items.forEach((i) => {
+    if (mode === '含稅') i.unitPriceTax = Math.round(i.unitPrice * (1 + TAX_RATE))
+    else {
+      i.unitPrice = Math.round(i.unitPrice)
+      i.unitPriceTax = undefined
+    }
+    syncNet(i)
+  })
+}
+function syncNet(i: QuoteItem) {
+  if (taxIn.value) i.unitPrice = (i.unitPriceTax ?? 0) / (1 + TAX_RATE)
+}
+
+/* ---------- 預留貨申請 ---------- */
+const holdOf = (l: QuoteLine) => stockHolds.find((h) => h.dealId === deal.value?.id && h.sku === l.intSku && (h.status === '待核准' || h.status === '保留中'))
+const holdDlg = ref<{ open: boolean; line: QuoteLine | null; qty: number; days: number }>({ open: false, line: null, qty: 1, days: 15 })
+function openHold(l: QuoteLine) {
+  holdDlg.value = { open: true, line: l, qty: Math.min(l.qty, stockFor(l.intSku)), days: 15 }
+}
+function submitHold() {
+  const { line, qty, days } = holdDlg.value
+  if (!line || !deal.value || qty <= 0) return
+  store.requestHold(deal.value, line.intSku, qty, days)
+  holdDlg.value.open = false
+  ElMessage.success(`已送出預留申請：${line.intSku} × ${qty}，${days} 天，待採購核准`)
+}
+const blankItem = (no: number): QuoteItem => ({ no, custSku: '', custName: '', desc: '', qty: 1, unitPrice: 0, unitPriceTax: q.value?.taxMode === '含稅' ? 0 : undefined })
 const blankLine = (no: number, itemNo: number): QuoteLine => ({ no, itemNo, extName: '', vendorSku: '', intSku: '', qty: 1, vendor: '', unitCost: null })
 function renumber(x: Quote) {
   const map = new Map(x.items.map((it, i) => [it.no, i + 1]))
@@ -206,6 +263,7 @@ function newQuote(from?: Quote) {
     date: today(),
     status: '草稿',
     note: from ? `自 v${from.version} 複製` : undefined,
+    taxMode: from?.taxMode,
     items: from ? from.items.map((i) => ({ ...i })) : [blankItem(1)],
     lines: from ? from.lines.map((l) => ({ ...l, vendorQuoteFile: undefined })) : [blankLine(1, 1)],
   }
@@ -246,7 +304,7 @@ function addLine(item: QuoteItem, after?: QuoteLine) {
 async function removeLine(l: QuoteLine) {
   const x = q.value
   if (!x || linesOf(x.items.find((i) => i.no === l.itemNo)!).length === 1) return
-  if (!(await confirmDelete(`刪除內部項次「${l.extName || l.intSku || '未命名'}」？`, '刪除內部項次'))) return
+  if (!(await confirmDelete(`刪除內部項次「${l.intSku || l.extName || '未命名'}」？`, '刪除內部項次'))) return
   x.lines.splice(x.lines.indexOf(l), 1)
   renumber(x)
 }
@@ -254,10 +312,12 @@ async function removeLine(l: QuoteLine) {
 const lineCostMissing = (l: QuoteLine) => buyPart(l) > 0 && l.unitCost === null
 /* 授權、維護合約、服務合約要有期間（月），後面的到期項目靠它算 */
 const monthsMissing = (l: QuoteLine) => natureOf(l) !== '硬體' && hasExpiry(natureOf(l)) && !(l.months && l.months > 0)
-function quoteValid(x: Quote) {
-  return x.items.length > 0 && x.items.every((i) => i.custName.trim() && i.qty > 0 && i.unitPrice > 0 && linesOf(i).length > 0) && x.lines.every((l) => l.intSku.trim() && l.extName.trim() && l.qty > 0 && !lineCostMissing(l) && !monthsMissing(l))
-}
-const REQUIRED_MSG = '必填未填：對外項次要有產品、數量、單價；內部項次要有內部 SKU、產品、數量與內部單價；授權、維護合約、服務合約要有期間（月）'
+/*
+ * 必填分兩段（1112 會議）：草稿隨時可存；上傳客戶回簽只檢查對客戶的項次（客戶簽的就是這些）；
+ * 內部 SKU、成本、期間、廠商報價單等到上單送審時才檢查（useQuoteSubmit 的 blockers）。
+ */
+const extValid = (x: Quote) => x.items.length > 0 && x.items.every((i) => i.custName.trim() && i.qty > 0 && (x.taxMode === '含稅' ? (i.unitPriceTax ?? 0) > 0 : i.unitPrice > 0))
+const EXT_REQUIRED_MSG = '對客戶的項次要有產品、數量、單價'
 /* 按過儲存／回簽之後，沒填的必填欄位才標紅 */
 const showErrors = ref(false)
 const bad = (v: string | number | null | undefined) => showErrors.value && (v === null || v === undefined || (typeof v === 'string' ? !v.trim() : v <= 0))
@@ -265,21 +325,17 @@ function saveDraft() {
   const x = q.value
   const d = deal.value
   if (!x || !d) return
-  if (!quoteValid(x)) {
-    showErrors.value = true
-    ElMessage.warning(REQUIRED_MSG)
-    return
-  }
   showErrors.value = false
   x.date = today()
   if (!isChangeQuote(x)) {
     syncDealAmount()
     if (d.stage === '規劃預算') {
       d.stage = '報價階段'
+      d.stageAt = new Date().toISOString()
       d.prob = 0.1
     }
   }
-  ElMessage.success(`v${x.version} 草稿已儲存，合計 ${money(quoteTotal(x))}`)
+  ElMessage.success(`v${x.version} 草稿已儲存，合計 ${money(quoteTotal(x))}（含稅 ${money(quoteTaxTotal(x))}）`)
 }
 async function discardDraft() {
   const x = q.value
@@ -303,7 +359,18 @@ const fileOpen = ref(false)
 /** 供應商主檔全部（含非正式） */
 const fileVendors = computed(() => vendors.map((v) => v.name))
 /** 還沒檢附報價單的採購項次 */
-const fileLineOptions = computed(() => (q.value?.lines ?? []).filter((l) => needsFile(l) && !l.vendorQuoteFile))
+const fileLineOptions = computed(() => (q.value?.lines ?? []).filter((l) => needsFile(l) && !l.vendorQuoteFile && !l.bargaining))
+/* 廠商還在議價：送審時和上傳報價單二擇一 */
+function markBargaining() {
+  const x = q.value
+  if (!x) return
+  x.lines.filter((l) => fileLines.value.includes(l.no)).forEach((l) => {
+    l.bargaining = true
+    if (fileVendor.value) l.vendor = fileVendor.value
+  })
+  fileLines.value = []
+}
+const bargainList = computed(() => (q.value?.lines ?? []).filter((l) => needsFile(l) && !l.vendorQuoteFile && l.bargaining))
 watch(q, () => { fileLines.value = [] })
 function onVendorFile(fileName: string) {
   const x = q.value
@@ -311,10 +378,11 @@ function onVendorFile(fileName: string) {
   x.lines.filter((l) => fileLines.value.includes(l.no)).forEach((l) => {
     l.vendorQuoteFile = fileName
     l.vendor = fileVendor.value
+    l.bargaining = undefined
   })
   fileLines.value = []
 }
-const lineLabel = (l: QuoteLine) => `${l.itemNo}.${linesOf(q.value!.items.find((i) => i.no === l.itemNo)!).indexOf(l) + 1} ${l.extName}`
+const lineLabel = (l: QuoteLine) => `${l.itemNo}.${linesOf(q.value!.items.find((i) => i.no === l.itemNo)!).indexOf(l) + 1} ${l.intSku || l.extName}`
 /** 刪除一份廠商報價單：對應的內部項次回到「未附」，可以重傳；草稿與退回待補件才能刪 */
 async function removeVendorFile(f: { file: string; vendor: string; lines: QuoteLine[] }) {
   const ok = await ElMessageBox.confirm(`刪除「${f.file}」？對應的 ${f.lines.length} 個內部項次會回到未附，可以重新上傳。`, '刪除廠商報價單', { confirmButtonText: '刪除', cancelButtonText: '取消', type: 'warning' }).then(() => true, () => false)
@@ -351,9 +419,9 @@ function uploadSignback() {
   const x = q.value
   const d = deal.value
   if (!x || !d) return
-  if (x.status === '草稿' && !quoteValid(x)) {
+  if (x.status === '草稿' && !extValid(x)) {
     showErrors.value = true
-    ElMessage.warning(REQUIRED_MSG)
+    ElMessage.warning(EXT_REQUIRED_MSG)
     return
   }
   showErrors.value = false
@@ -373,6 +441,11 @@ function uploadSignback() {
 
 /* ---------- 客戶版預覽 ---------- */
 const previewOpen = ref(false)
+/** 預覽單價欄以未稅或含稅呈現（預設跟報價單的發起方式） */
+const previewTax = ref<'未稅' | '含稅'>('未稅')
+watch(previewOpen, (v) => { if (v) previewTax.value = q.value?.taxMode === '含稅' ? '含稅' : '未稅' })
+const previewPrice = (i: QuoteItem) => (previewTax.value === '含稅' ? (q.value?.taxMode === '含稅' ? (i.unitPriceTax ?? 0) : i.unitPrice * (1 + TAX_RATE)) : i.unitPrice)
+const previewAmount = (i: QuoteItem) => (previewTax.value === '含稅' ? itemTax(i) : i.qty * i.unitPrice)
 /** true＝看客戶回簽（同一張報價單加上客戶簽章），false＝客戶版報價單 */
 const signbackPreview = ref(false)
 function openPreview(signed: boolean) {
@@ -424,6 +497,11 @@ const statusTag = (s: Quote['status']) => (s === '草稿' ? 'amber' : 'olive')
         <!-- 標題右邊接客戶回簽：標籤＋按鈕（簽核進度、請款、毛利、上單條件都在基本資料頁簽） -->
         <div class="block-head head-left">
           <h4>報價明細</h4>
+          <el-radio-group v-if="draftEditable" :model-value="q.taxMode ?? '未稅'" size="small" class="tax-mode" @change="(v: string | number | boolean | undefined) => setTaxMode(v as '未稅' | '含稅')">
+            <el-radio-button value="未稅">未稅發起</el-radio-button>
+            <el-radio-button value="含稅">含稅發起</el-radio-button>
+          </el-radio-group>
+          <span v-else-if="taxIn" class="tag slate">含稅發起</span>
           <!-- 一顆按鈕：還沒回簽是「客戶回簽」上傳；回簽後按鈕文字換成檔名 -->
           <div class="signback" :class="{ flash: highlight === 'signback' }">
             <el-button v-if="q.signbackFile" :icon="Paperclip" class="signback-btn done" title="預覽客戶回簽" @click="openPreview(true)">{{ q.signbackFile }}</el-button>
@@ -462,12 +540,12 @@ const statusTag = (s: Quote['status']) => (s === '草稿' ? 'amber' : 'olive')
                 <th>對客戶 SKU<br />對客戶產品<span v-if="draftEditable" class="req">*</span></th>
                 <th>產品描述</th>
                 <th>數量<span v-if="draftEditable" class="req">*</span></th>
-                <th>單價<span v-if="draftEditable" class="req">*</span><br /><span class="muted">未稅</span></th>
+                <th>單價<span v-if="draftEditable" class="req">*</span><br /><span class="muted">{{ taxIn ? '含稅' : '未稅' }}</span></th>
                 <th class="ext-end">對客戶報價<br /><span class="muted">未稅 / 含稅</span></th>
                 <th class="int lead">內部<br />項次</th>
                 <th class="int int-end">
                   <span class="th-inner">
-                    <span>內部 SKU<span v-if="draftEditable" class="req">*</span><br />內部產品<span v-if="draftEditable" class="req">*</span></span>
+                    <span>內部 SKU<span v-if="draftEditable" class="req">*</span></span>
                     <button type="button" class="fold" :title="showInternal ? '收合內部欄位' : '展開內部欄位'" @click="showInternal = !showInternal"><el-icon><component :is="showInternal ? DArrowLeft : DArrowRight" /></el-icon></button>
                   </span>
                 </th>
@@ -511,16 +589,23 @@ const statusTag = (s: Quote['status']) => (s === '草稿' ? 'amber' : 'olive')
                       <span v-else class="muted">{{ item.desc || '—' }}</span>
                     </td>
                     <td class="n ext" :rowspan="linesOf(item).length + 1">
-                      <el-input-number v-if="draftEditable" v-model="item.qty" :min="1" :controls="false" size="small" class="cell-num" :class="{ invalid: bad(item.qty) }" />
+                      <el-input-number v-if="draftEditable" v-model="item.qty" :min="1" :precision="0" :controls="false" size="small" class="cell-num" :class="{ invalid: bad(item.qty) }" @change="syncNet(item)" />
                       <template v-else>{{ item.qty }}</template>
                     </td>
                     <td class="n ext" :rowspan="linesOf(item).length + 1">
-                      <el-input-number v-if="draftEditable" v-model="item.unitPrice" :min="0" :step="1000" :controls="false" size="small" class="cell-num" :class="{ invalid: bad(item.unitPrice) }" />
-                      <template v-else>{{ money(item.unitPrice) }}</template>
+                      <template v-if="taxIn">
+                        <el-input-number v-if="draftEditable" v-model="item.unitPriceTax" :min="0" :step="1000" :precision="0" :controls="false" size="small" class="cell-num" :class="{ invalid: bad(item.unitPriceTax) }" @change="syncNet(item)" />
+                        <template v-else>{{ money(item.unitPriceTax ?? 0) }}</template>
+                        <div class="muted small">未稅 {{ money(item.unitPrice) }}</div>
+                      </template>
+                      <template v-else>
+                        <el-input-number v-if="draftEditable" v-model="item.unitPrice" :min="0" :step="1000" :precision="0" :controls="false" size="small" class="cell-num" :class="{ invalid: bad(item.unitPrice) }" />
+                        <template v-else>{{ money(item.unitPrice) }}</template>
+                      </template>
                     </td>
                     <td class="n ext ext-end" :rowspan="linesOf(item).length + 1">
                       <div><b>{{ money(itemRevenue(item)) }}</b></div>
-                      <div class="muted small">{{ money(withTax(itemRevenue(item))) }}</div>
+                      <div class="muted small">{{ money(itemTax(item)) }}</div>
                     </td>
                     <!-- 內部項次欄位的佔位格（高度 0），讓後面的項次層級欄位落在正確的欄 -->
                     <td v-for="i in showInternal ? 5 : 2" :key="i" class="filler int"></td>
@@ -542,38 +627,47 @@ const statusTag = (s: Quote['status']) => (s === '草稿' ? 'amber' : 'olive')
                   </td>
                   <td class="int int-end">
                     <template v-if="draftEditable">
-                      <el-input v-model="l.intSku" size="small" placeholder="內部 SKU" :class="{ invalid: bad(l.intSku) }" />
-                      <el-input v-model="l.extName" size="small" placeholder="內部產品" :class="{ invalid: bad(l.extName) }" />
+                      <el-select v-if="isOwn(l)" :model-value="l.intSku || undefined" size="small" filterable placeholder="選自有服務項目" :class="{ invalid: bad(l.intSku) }" @change="(v: string) => pickService(l, v)">
+                        <el-option v-for="svc in activeServices" :key="svc.code" :value="svc.code" :label="`${svc.name}（${svc.code}）`" />
+                      </el-select>
+                      <el-input v-else v-model="l.intSku" size="small" placeholder="內部 SKU" :class="{ invalid: bad(l.intSku) }" />
+                      <div v-if="isOwn(l) && serviceOf(l)" class="muted small sku">{{ serviceOf(l)!.name }}</div>
                       <div class="nature-row">
                         <el-select :model-value="natureOf(l)" size="small" class="nature" style="width: 108px" @change="(v: LineNature) => (l.nature = v)">
                           <el-option value="硬體" label="硬體" /><el-option value="授權" label="授權" /><el-option value="維護合約" label="維護合約" /><el-option value="服務合約" label="服務合約" /><el-option value="單次服務" label="單次服務" />
                         </el-select>
-                        <el-input-number v-if="natureOf(l) !== '硬體' && hasExpiry(natureOf(l))" v-model="l.months" :min="1" :controls="false" size="small" class="months" placeholder="月" style="width: 64px" :class="{ invalid: showErrors && monthsMissing(l) }" />
+                        <el-input-number v-if="natureOf(l) !== '硬體' && hasExpiry(natureOf(l))" v-model="l.months" :min="1" :precision="0" :controls="false" size="small" class="months" placeholder="月" style="width: 64px" :class="{ invalid: showErrors && monthsMissing(l) }" />
                         <span v-if="natureOf(l) !== '硬體' && hasExpiry(natureOf(l))" class="muted small">個月<span class="req">*</span></span>
                       </div>
                     </template>
                     <template v-else>
-                      <div class="muted small sku">{{ l.intSku }}</div>
-                      <div class="name">{{ l.extName }}</div>
+                      <div class="name">{{ l.intSku }}</div>
+                      <div v-if="isOwn(l)" class="muted small sku">{{ serviceOf(l)?.name ?? l.extName }}</div>
                       <div class="muted small sku">{{ natureOf(l) }}{{ l.months ? ` · ${l.months} 個月` : '' }}</div>
                       <div v-if="stockPart(l) > 0 && !lineEditable" class="muted small">使用庫存</div>
                     </template>
                     <template v-if="lineEditable">
                       <div class="opts">
                         <el-checkbox :model-value="isOwn(l)" size="small" @change="(v: string | number | boolean) => setOwn(l, !!v)">自有工程</el-checkbox>
-                        <el-checkbox v-if="!isOwn(l) && canUseStock(l)" :model-value="stockMode(l) === 'buy'" size="small" @change="(v: string | number | boolean) => setStockMode(l, v ? 'buy' : 'stock')">另行採購<span class="muted small hint">庫存可用 {{ stockFor(l.intSku) }}</span></el-checkbox>
+                        <el-checkbox v-if="!isOwn(l) && canUseStock(l)" :model-value="stockMode(l) === 'buy'" size="small" @change="(v: string | number | boolean) => setStockMode(l, v ? 'buy' : 'stock')">另行採購</el-checkbox>
                       </div>
                       <el-input v-if="!isOwn(l) && canUseStock(l) && stockMode(l) === 'buy'" v-model="l.insistReason" size="small" placeholder="*另行採購原因" class="reason" />
                     </template>
+                    <div v-if="!isOwn(l) && l.intSku && (stockFor(l.intSku) > 0 || holdOf(l))" class="stock-callout" :class="{ pulse: lineEditable && !holdOf(l) }">
+                      <span>庫存可用 <b>{{ stockFor(l.intSku) }}</b></span>
+                      <span v-if="holdOf(l)" class="tag" :class="holdOf(l)!.status === '保留中' ? 'olive' : 'amber'">{{ holdOf(l)!.status === '保留中' ? `保留 ${holdOf(l)!.qty} 到 ${holdOf(l)!.expiresAt}` : `預留待核准 ${holdOf(l)!.qty}` }}</span>
+                      <el-button v-else-if="internalEditable && deal.ownerId === store.currentUserId" size="small" text type="primary" @click="openHold(l)">申請保留</el-button>
+                    </div>
                   </td>
                   <template v-if="showInternal">
                     <td class="n int">
-                      <el-input-number v-if="draftEditable" v-model="l.qty" :min="1" :controls="false" size="small" class="cell-num" :class="{ invalid: bad(l.qty) }" />
+                      <el-input-number v-if="draftEditable" v-model="l.qty" :min="1" :precision="0" :controls="false" size="small" class="cell-num" :class="{ invalid: bad(l.qty) }" />
                       <template v-else>{{ l.qty }}</template>
                     </td>
                     <td class="n int">
                       <template v-if="stockPart(l) === l.qty">{{ money(transferOf(l.intSku) ?? 0) }}</template>
-                      <el-input-number v-else-if="lineEditable" v-model="l.unitCost" :min="0" :step="1000" :controls="false" size="small" class="cell-num" placeholder="*" :class="{ invalid: showErrors && lineCostMissing(l) }" />
+                      <template v-else-if="isOwn(l)">{{ l.unitCost === null ? '—' : money(l.unitCost) }}<div class="muted small">標準成本</div></template>
+                      <el-input-number v-else-if="lineEditable" v-model="l.unitCost" :min="0" :step="1000" :precision="0" :controls="false" size="small" class="cell-num" placeholder="*" :class="{ invalid: showErrors && lineCostMissing(l) }" />
                       <template v-else>{{ l.unitCost === null ? '—' : money(l.unitCost) }}</template>
                     </td>
                     <td class="n int">
@@ -587,7 +681,8 @@ const statusTag = (s: Quote['status']) => (s === '草稿' ? 'amber' : 'olive')
                   <td class="nowrap">
                     <span v-if="!needsFile(l)" class="muted">不需要</span>
                     <span v-else-if="l.vendorQuoteFile" class="file" :title="l.vendorQuoteFile"><el-icon><Paperclip /></el-icon><span class="t">{{ l.vendorQuoteFile }}</span></span>
-                    <span v-else class="tag amber">未附</span>
+                    <span v-else-if="l.bargaining" class="tag amber">議價中</span>
+                    <span v-else class="tag red">未附</span>
                   </td>
                   </template>
                 </tr>
@@ -595,7 +690,7 @@ const statusTag = (s: Quote['status']) => (s === '草稿' ? 'amber' : 'olive')
             <tfoot>
               <tr>
                 <td colspan="5" class="foot-label">合計</td>
-                <td class="n"><div><b>{{ money(revenue) }}</b></div><div class="muted small">{{ money(withTax(revenue)) }}</div></td>
+                <td class="n"><div><b>{{ money(revenue) }}</b></div><div class="muted small">{{ money(revenueTax) }}</div></td>
                 <td class="int lead muted">成本</td>
                 <td class="int int-end n">
                   <template v-if="!showInternal"><div><b>{{ money(cost) }}</b></div><div class="muted small">{{ money(withTax(cost)) }}</div></template>
@@ -629,6 +724,7 @@ const statusTag = (s: Quote['status']) => (s === '草稿' ? 'amber' : 'olive')
                 <el-option v-for="l in fileLineOptions" :key="l.no" :value="l.no" :label="lineLabel(l)" />
               </el-select>
               <el-button size="small" type="primary" :icon="Upload" :disabled="!fileVendor || !fileLines.length" @click="fileOpen = true">上傳報價單</el-button>
+              <el-button size="small" :disabled="!fileLines.length" @click="markBargaining">議價中</el-button>
             </div>
             <table v-if="vendorFiles.length" class="plain-table">
               <thead><tr><th>檔案</th><th>供應商</th><th>對應內部項次</th><th v-if="internalEditable"></th></tr></thead>
@@ -641,7 +737,11 @@ const statusTag = (s: Quote['status']) => (s === '草稿' ? 'amber' : 'olive')
                 </tr>
               </tbody>
             </table>
-            <p v-else class="muted small">還沒有廠商報價單。</p>
+            <p v-else-if="!bargainList.length" class="muted small">還沒有廠商報價單。</p>
+            <div v-if="bargainList.length" class="bargain-list">
+              <span class="tag amber">議價中</span>
+              <span v-for="l in bargainList" :key="l.no" class="bargain-item">{{ lineLabel(l) }}<span v-if="l.vendor" class="muted small">（{{ l.vendor }}）</span><el-button v-if="internalEditable" size="small" text :icon="Delete" class="row-delete" @click="l.bargaining = undefined" /></span>
+            </div>
           </section>
 
           <!-- 合約變更差異（請款條件、毛利率、上單條件已搬到基本資料頁簽） -->
@@ -683,21 +783,21 @@ const statusTag = (s: Quote['status']) => (s === '草稿' ? 'amber' : 'olive')
           <dt>業務窗口</dt><dd>{{ deal.owner }}</dd>
         </dl>
         <table class="paper-table">
-          <thead><tr><th>#</th><th>SKU</th><th>品名</th><th class="num">數量</th><th class="num">未稅單價</th><th class="num">小計</th></tr></thead>
+          <thead><tr><th>#</th><th>SKU</th><th>品名</th><th class="num">數量</th><th class="num">{{ previewTax }}單價</th><th class="num">{{ previewTax }}小計</th></tr></thead>
           <tbody>
             <tr v-for="i in q.items" :key="i.no">
               <td class="num">{{ i.no }}</td>
               <td class="num">{{ i.custSku || '—' }}</td>
               <td>{{ i.custName || '（未填品名）' }}<div v-if="i.desc" class="muted small">{{ i.desc }}</div></td>
               <td class="num">{{ i.qty }}</td>
-              <td class="num">{{ money(i.unitPrice) }}</td>
-              <td class="num">{{ money(i.qty * i.unitPrice) }}</td>
+              <td class="num">{{ money(previewPrice(i)) }}</td>
+              <td class="num">{{ money(previewAmount(i)) }}</td>
             </tr>
           </tbody>
           <tfoot>
             <tr><td colspan="5" class="label">未稅合計</td><td class="num">{{ money(revenue) }}</td></tr>
-            <tr><td colspan="5" class="label">營業稅 5%</td><td class="num">{{ money(withTax(revenue) - revenue) }}</td></tr>
-            <tr class="grand"><td colspan="5" class="label">含稅總計</td><td class="num">{{ money(withTax(revenue)) }}</td></tr>
+            <tr><td colspan="5" class="label">營業稅 5%</td><td class="num">{{ money(revenueTax - revenue) }}</td></tr>
+            <tr class="grand"><td colspan="5" class="label">含稅總計</td><td class="num">{{ money(revenueTax) }}</td></tr>
           </tfoot>
         </table>
         <footer class="paper-foot">
@@ -717,14 +817,96 @@ const statusTag = (s: Quote['status']) => (s === '草稿' ? 'amber' : 'olive')
         </div>
       </div>
       <template #footer>
+        <el-radio-group v-model="previewTax" size="small" class="preview-tax">
+          <el-radio-button value="未稅">未稅呈現</el-radio-button>
+          <el-radio-button value="含稅">含稅呈現</el-radio-button>
+        </el-radio-group>
         <el-button @click="previewOpen = false">關閉</el-button>
         <el-button type="primary" @click="ElMessage.success('已下載')">下載</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="holdDlg.open" width="420px" title="申請保留庫存" append-to-body>
+      <el-form v-if="holdDlg.line" label-position="top">
+        <el-form-item label="料號"><span class="id">{{ holdDlg.line.intSku }}</span><span class="muted small">　可用 {{ stockFor(holdDlg.line.intSku) }}</span></el-form-item>
+        <el-form-item label="數量" required>
+          <el-input-number v-model="holdDlg.qty" :min="1" :max="stockFor(holdDlg.line.intSku)" :precision="0" />
+        </el-form-item>
+        <el-form-item label="保留天數" required>
+          <el-radio-group v-model="holdDlg.days">
+            <el-radio-button :value="15">15 天</el-radio-button>
+            <el-radio-button :value="30">30 天</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="holdDlg.open = false">取消</el-button>
+        <el-button type="primary" @click="submitHold">送出申請</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <style scoped>
+.tax-mode {
+  margin-left: 4px;
+}
+
+.preview-tax {
+  margin-right: auto;
+  float: left;
+}
+
+/* 有庫存：色塊加呼吸光，一眼看到（1112 會議 #7） */
+.stock-callout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--teal-soft);
+  border: 1px solid var(--teal);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.stock-callout b {
+  font-size: 14px;
+  color: var(--teal);
+}
+
+.stock-callout.pulse {
+  animation: stock-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes stock-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--teal) 45%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--teal) 0%, transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stock-callout.pulse {
+    animation: none;
+  }
+}
+
+.bargain-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.bargain-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .wb {
   display: flex;
   flex-direction: column;

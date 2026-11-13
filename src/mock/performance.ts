@@ -1,4 +1,4 @@
-import { orders } from './data'
+import { orders, orderActualCost } from './data'
 
 /*
  * 首頁儀表板的業績與 KPI 資料。
@@ -7,7 +7,7 @@ import { orders } from './data'
  */
 export const YEAR = 2026
 export const THIS_MONTH = 10
-export const BONUS_RATE = 0.08 // 待確認：獎金率與計算基礎（業務毛利、收款後認列）
+export const BONUS_RATE = 0.08 // 待確認：獎金率；計算基礎依 1113 決定用實際成本算的毛利（orderActualCost），收款後認列
 /** Demo 存五年：今年之外的年度全部是舊 ERP 轉入、已收款的紀錄 */
 export const YEARS = [2026, 2025, 2024, 2023, 2022] as const
 export const lastMonthOf = (year: number) => (year === YEAR ? THIS_MONTH : 12)
@@ -125,9 +125,9 @@ export function repMonths(rep: SalesRep, year = YEAR): MonthRow[] {
     const m = i + 1
     const row: MonthRow = { month: m, actual: 0, target: targets[i] ?? 0, margin: 0, collectedMargin: 0 }
     orders
-      .filter((o) => o.owner === rep.name && yearOfSo(o.soNo) === year && monthOfSo(o.soNo) === m)
+      .filter((o) => o.phase !== '保證單' && o.owner === rep.name && yearOfSo(o.soNo) === year && monthOfSo(o.soNo) === m)
       .forEach((o) => {
-        const margin = o.amount - o.cost
+        const margin = o.amount - orderActualCost(o).cost
         const received = o.milestones.filter((x) => x.status === '已收款').reduce((s, x) => s + x.amount, 0)
         row.actual += o.amount
         row.margin += margin

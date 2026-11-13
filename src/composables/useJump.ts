@@ -12,7 +12,7 @@ export function useJump() {
   /** 依字串判斷：SO-… 走 SO，其餘（預下單 D-…／D-…）走商機 */
   const goRef = (ref: string) => {
     const v = ref.replace(/^預下單\s*/, '')
-    if (v.startsWith('SO-')) return goSo(v)
+    if (v.startsWith('SO-') || v.startsWith('PRE-')) return goSo(v)
     return goDealNo(v)
   }
   return { goSo, goDealNo, goRef }

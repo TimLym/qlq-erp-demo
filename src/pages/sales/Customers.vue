@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { deptWarningOf } from '../../utils/deptCheck'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { customers, deals, orders, type Customer, type CustomerDept } from '../../mock/data'
+import { customers, deals, orders, isGuarantee, type Customer, type CustomerDept } from '../../mock/data'
 import { useAppStore } from '../../stores/app'
 import { money } from '../../utils/format'
 
@@ -14,7 +15,8 @@ const type = ref<'' | '終端客戶' | '中間商'>('')
 const canEdit = computed(() => ['業務', '業務主管', '執行長', '系統管理員'].includes(store.role))
 
 const activeDeals = (c: Customer) => deals.filter((d) => d.customer === c.name && d.stage !== '未成交' && d.stage !== 'SO已成立')
-const orderCount = (c: Customer) => orders.filter((o) => o.customer === c.name).length
+/* 正式訂單：保證單（含作廢）不算 */
+const orderCount = (c: Customer) => orders.filter((o) => o.customer === c.name && !isGuarantee(o)).length
 const list = computed(() =>
   customers
     .filter((c) => !type.value || c.type === type.value)
@@ -30,11 +32,11 @@ const openId = ref<string | null>(null)
 const current = computed(() => customers.find((c) => c.id === openId.value))
 const tab = ref<'basic' | 'depts' | 'deals'>('basic')
 const editing = ref(false)
-const form = ref({ name: '', taxId: '', industry: '', type: '終端客戶' as Customer['type'], address: '', owner: '', note: '', status: '正常' as Customer['status'] })
+const form = ref({ name: '', taxId: '', industry: '', type: '終端客戶' as Customer['type'], address: '', owner: '', note: '', status: '正常' as Customer['status'], payDays: 30 })
 function startEdit() {
   const c = current.value
   if (!c) return
-  form.value = { name: c.name, taxId: c.taxId, industry: c.industry, type: c.type, address: c.address ?? '', owner: c.ownerId ?? '', note: c.note ?? '', status: c.status }
+  form.value = { name: c.name, taxId: c.taxId, industry: c.industry, type: c.type, address: c.address ?? '', owner: c.ownerId ?? '', note: c.note ?? '', status: c.status, payDays: c.payDays ?? 30 }
   editing.value = true
 }
 function saveEdit() {
@@ -50,6 +52,7 @@ function saveEdit() {
     return
   }
   const ownerUser = store.users.find((u) => u.id === form.value.owner)
+  c.payDays = form.value.payDays
   Object.assign(c, { name: form.value.name.trim(), taxId: form.value.taxId, industry: form.value.industry.trim(), type: form.value.type, address: form.value.address.trim() || undefined, ownerId: ownerUser?.id, owner: ownerUser?.name, note: form.value.note.trim() || undefined, status: form.value.status, updatedAt: new Date().toISOString() })
   editing.value = false
   ElMessage.success('客戶資料已儲存並記錄異動')
@@ -58,6 +61,7 @@ function saveEdit() {
 /* 部門 */
 const deptForm = ref<CustomerDept>({ name: '', contact: '', phone: '', email: '' })
 const addingDept = ref(false)
+const deptWarn = computed(() => deptWarningOf(deptForm.value.name, current.value?.depts.map((d) => d.name) ?? []))
 function addDept() {
   const c = current.value
   if (!c) return
@@ -108,7 +112,7 @@ function createCustomer() {
 }
 
 const customerDeals = computed(() => (current.value ? deals.filter((d) => d.customer === current.value!.name) : []))
-const customerOrders = computed(() => (current.value ? orders.filter((o) => o.customer === current.value!.name) : []))
+const customerOrders = computed(() => (current.value ? orders.filter((o) => o.customer === current.value!.name && !isGuarantee(o)) : []))
 function goDeal(id: string) {
   openId.value = null
   router.push({ path: '/sales/pipeline', query: { deal: id } })
@@ -200,6 +204,13 @@ function newDealFor(c: Customer) {
                   </el-form-item>
                 </div>
                 <el-form-item label="地址"><el-input v-model="form.address" /></el-form-item>
+                <el-form-item label="付款條件">
+                  <el-radio-group v-model="form.payDays">
+                    <el-radio-button :value="30">月結 30 天</el-radio-button>
+                    <el-radio-button :value="60">月結 60 天</el-radio-button>
+                    <el-radio-button :value="120">月結 120 天</el-radio-button>
+                  </el-radio-group>
+                </el-form-item>
                 <el-form-item label="備註"><el-input v-model="form.note" placeholder="例：採購流程需經總務處；付款習慣月結 60 天" /></el-form-item>
                 <div class="edit-actions"><el-button @click="editing = false">取消</el-button><el-button type="primary" @click="saveEdit">儲存</el-button></div>
               </el-form>
@@ -209,6 +220,7 @@ function newDealFor(c: Customer) {
                 <dt>類型</dt><dd>{{ current.type }}</dd>
                 <dt>負責業務</dt><dd>{{ current.owner ?? '未指定' }}</dd>
                 <dt>地址</dt><dd>{{ current.address ?? '—' }}</dd>
+                <dt>付款條件</dt><dd>{{ current.payDays ? `月結 ${current.payDays} 天` : '—' }}</dd>
                 <dt>狀態</dt><dd>{{ current.status }}</dd>
                 <dt>備註</dt><dd>{{ current.note ?? '—' }}</dd>
                 <dt>建檔</dt><dd class="id">{{ current.createdAt.slice(0, 10) }}</dd>
@@ -238,6 +250,7 @@ function newDealFor(c: Customer) {
                   <el-input v-model="deptForm.email" size="small" placeholder="Email" style="width: 180px" />
                   <el-button size="small" type="primary" @click="addDept">加入</el-button>
                   <el-button size="small" text @click="addingDept = false">取消</el-button>
+                  <p v-if="deptWarn" class="dept-warn">{{ deptWarn }}</p>
                 </div>
               </div>
             </div>
@@ -296,6 +309,13 @@ function newDealFor(c: Customer) {
 </template>
 
 <style scoped>
+.dept-warn {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  color: var(--amber);
+  font-size: 12px;
+}
+
 .actions {
   display: flex;
   gap: 8px;

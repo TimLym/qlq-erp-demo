@@ -25,8 +25,10 @@ const quote = computed(() => {
   if (!a.value?.dealId) return undefined
   return quotes.filter((q) => q.dealId === a.value!.dealId).sort((x, y) => y.version - x.version)[0]
 })
+/* 廠商還在議價的採購項次：採購稽核時要知道成本還會變 */
+const bargainCount = computed(() => (a.value?.type === '上單' ? (quote.value?.lines ?? []).filter((l) => l.bargaining && !l.vendorQuoteFile).length : 0))
 
-const canAct = computed(() => a.value?.status === '待簽核' && a.value.route[a.value.currentStep] === store.role)
+const canAct = computed(() => !!a.value && store.canActOn(a.value))
 const isAuditStep = computed(() => canAct.value && store.role === '採購' && a.value?.type === '上單')
 
 const margin = computed(() => (a.value && a.value.cost !== undefined && a.value.amount > 0 ? (a.value.amount - a.value.cost) / a.value.amount : null))
@@ -86,7 +88,7 @@ const typeTag: Record<string, string> = { 上單: 'teal', PO: 'slate', 預付: '
           <div class="eyebrow">
             <span class="tag" :class="typeTag[a.type]">{{ a.type }}</span>
             <span class="num">{{ a.refNo }}</span>
-            <span v-if="a.postHoc" class="tag red">事後追認</span><span v-for="f in a.flags ?? []" :key="f" class="tag amber">{{ f }}</span>
+            <span v-if="a.postHoc" class="tag red">事後追認</span><span v-for="f in a.flags ?? []" :key="f" class="tag amber">{{ f }}</span><span v-if="bargainCount" class="tag amber">{{ bargainCount }} 項議價中</span>
             <span v-if="a.diff && a.type === '上單'" class="tag amber">重審</span>
             <span v-if="a.diff && a.type === 'PO'" class="tag red">成本異動</span>
           </div>
@@ -107,7 +109,7 @@ const typeTag: Record<string, string> = { 上單: 'teal', PO: 'slate', 預付: '
         <section class="block">
           <h3>金額與毛利</h3>
           <dl class="kv">
-            <dt>{{ a.type === '預付' ? '預付金額' : a.type === '轉撥價' ? '新轉撥價' : a.type === '申請' ? '申請金額' : a.type === '供應商建檔' ? '金額' : '售價合計' }}</dt>
+            <dt>{{ a.type === '預付' ? '預付金額' : a.type === '品項參考成本' ? '新品項參考成本' : a.type === '申請' ? '申請金額' : a.type === '供應商建檔' ? '金額' : '售價合計' }}</dt>
             <dd class="num">{{ money(a.amount) }}</dd>
             <template v-if="a.cost !== undefined">
               <dt>成本合計</dt>
@@ -129,9 +131,9 @@ const typeTag: Record<string, string> = { 上單: 'teal', PO: 'slate', 預付: '
         </section>
 
         <section v-if="a.diff" class="block">
-          <h3>{{ a.type === 'PO' ? '成本異動（送審預估 → PO 實際）' : a.type === '轉撥價' ? '轉撥價異動（參考成本一併列出）' : '與上一版的差異' }}</h3>
+          <h3>{{ a.type === 'PO' ? '成本異動（送審預估 → PO 實際）' : a.type === '品項參考成本' ? '品項參考成本異動（參考成本一併列出）' : '與上一版的差異' }}</h3>
           <table class="plain-table diff">
-            <thead><tr><th>欄位</th><th>{{ a.type === 'PO' ? '預估' : a.type === '轉撥價' ? '目前' : '上一版' }}</th><th>{{ a.type === 'PO' ? '實際' : a.type === '轉撥價' ? '新' : '本版' }}</th></tr></thead>
+            <thead><tr><th>欄位</th><th>{{ a.type === 'PO' ? '預估' : a.type === '品項參考成本' ? '目前' : '上一版' }}</th><th>{{ a.type === 'PO' ? '實際' : a.type === '品項參考成本' ? '新' : '本版' }}</th></tr></thead>
             <tbody>
               <tr v-for="d in a.diff" :key="d.field">
                 <td>{{ d.field }}</td>
@@ -168,13 +170,13 @@ const typeTag: Record<string, string> = { 上單: 'teal', PO: 'slate', 預付: '
                 </tr>
                 <tr v-for="(l, k) in quote.lines.filter((x) => x.itemNo === i.no)" :key="l.no" class="int-row">
                   <td class="num muted">{{ i.no }}.{{ k + 1 }}</td>
-                  <td class="muted">{{ l.extName }}<span class="small"> · {{ l.vendor }}</span></td>
+                  <td class="muted">{{ l.extName }}<span class="small"> · {{ l.vendor }}</span><span v-if="l.bargaining && !l.vendorQuoteFile" class="tag amber">議價中</span></td>
                   <td class="muted">{{ l.intSku }}</td>
                   <td class="num">{{ l.qty }}</td>
                   <td></td>
                   <td class="num">
-                    <template v-if="l.stockQty && l.stockQty >= l.qty">{{ money(transferOf(l.intSku) ?? 0) }}<div class="muted small">用庫存 · 轉撥價</div></template>
-                    <template v-else-if="l.stockQty">{{ l.unitCost === null ? '—' : money(l.unitCost) }}<div class="muted small">庫存 {{ l.stockQty }} 台用轉撥價 {{ money(transferOf(l.intSku) ?? 0) }}</div></template>
+                    <template v-if="l.stockQty && l.stockQty >= l.qty">{{ money(transferOf(l.intSku) ?? 0) }}<div class="muted small">用庫存 · 品項參考成本</div></template>
+                    <template v-else-if="l.stockQty">{{ l.unitCost === null ? '—' : money(l.unitCost) }}<div class="muted small">庫存 {{ l.stockQty }} 台用品項參考成本 {{ money(transferOf(l.intSku) ?? 0) }}</div></template>
                     <template v-else>{{ l.unitCost === null ? '—' : money(l.unitCost) }}<div v-if="l.insistReason" class="muted small">庫存夠仍採購：{{ l.insistReason }}</div></template>
                   </td>
                   <td v-if="isAuditStep" class="num"><el-input size="small" :model-value="l.unitCost ?? ''" class="cost-input" /></td>

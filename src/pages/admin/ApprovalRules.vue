@@ -148,7 +148,16 @@ function removeNode(id: string) {
 }
 
 /* 點節點 → 誰來簽 */
-const ndlg = reactive<{ open: boolean; nodeId: string; mode: AssignMode; userId: string }>({ open: false, nodeId: '', mode: '任一人', userId: '' })
+const ndlg = reactive<{ open: boolean; nodeId: string; mode: AssignMode; userId: string; proxyUserId: string }>({ open: false, nodeId: '', mode: '任一人', userId: '', proxyUserId: '' })
+/* 代理人：只有執行長、系統管理員能設；該角色沒有人時由他簽 */
+const proxyUsers = computed(() => users.filter((u) => !['業務', '工程師'].includes(u.role)))
+/* 代理人本身的角色也在這張單的其他關卡：可能同一人簽兩關（系統會併關，但可能不足三人） */
+const proxyClash = computed(() => {
+  const u = users.find((x) => x.id === ndlg.proxyUserId)
+  if (!u) return ''
+  const other = doc.value.nodes.find((n) => n.id !== ndlg.nodeId && n.kind === 'role' && (n.role === u.role || n.assign?.proxyUserId === u.id))
+  return other ? `${u.name} 也可能簽「${other.role}」這一關` : ''
+})
 const ndlgNode = computed(() => nodeById(ndlg.nodeId))
 const ndlgRole = computed(() => ndlgNode.value?.role ?? '')
 const ndlgUsers = computed(() => (ndlgRole.value === '直屬主管' ? users.filter((u) => u.role !== '業務') : users.filter((u) => u.role === ndlgRole.value)))
@@ -158,6 +167,7 @@ function onNodeClick(ev: NodeMouseEvent) {
   ndlg.nodeId = n.id
   ndlg.mode = assignModeOf(n)
   ndlg.userId = n.assign?.userId ?? ndlgUsers.value[0]?.id ?? ''
+  ndlg.proxyUserId = n.assign?.proxyUserId ?? ''
   ndlg.open = true
 }
 function confirmNodeDialog() {
@@ -168,7 +178,7 @@ function confirmNodeDialog() {
     return
   }
   const dflt: AssignMode = n.role === '直屬主管' ? '依申請人' : '任一人'
-  n.assign = ndlg.mode === dflt ? undefined : { mode: ndlg.mode, userId: ndlg.mode === '指定人' ? ndlg.userId : undefined }
+  n.assign = ndlg.mode === dflt && !ndlg.proxyUserId ? undefined : { mode: ndlg.mode, userId: ndlg.mode === '指定人' ? ndlg.userId : undefined, proxyUserId: ndlg.proxyUserId || undefined }
   ndlg.open = false
   syncFlow()
 }
@@ -476,6 +486,14 @@ function discard() {
         <el-select v-model="ndlg.userId" size="small" style="width: 200px" :disabled="!canEdit">
           <el-option v-for="u in ndlgUsers" :key="u.id" :value="u.id" :label="`${u.name}（${u.role}・${u.dept}）`" />
         </el-select>
+      </div>
+      <div class="cond-line note-line">
+        <span class="muted">代理人</span>
+        <el-select v-model="ndlg.proxyUserId" size="small" clearable placeholder="無" style="width: 200px" :disabled="!canEdit || !['執行長', '系統管理員'].includes(store.role)">
+          <el-option v-for="u in proxyUsers" :key="u.id" :value="u.id" :label="`${u.name}（${u.role}）`" />
+        </el-select>
+        <span v-if="!ndlgUsers.length" class="tag amber">目前沒有{{ ndlgRole }}</span>
+        <span v-if="proxyClash" class="tag amber">{{ proxyClash }}</span>
       </div>
       <template #footer>
         <el-button v-if="canEdit" type="danger" plain @click="removeFromNodeDialog">移除這一關</el-button>
