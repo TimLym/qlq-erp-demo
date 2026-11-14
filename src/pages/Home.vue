@@ -258,6 +258,10 @@ const expandedAnn = ref<string | null>(null)
   list-style: none;
   margin: 0;
   padding: 4px 8px 6px;
+  /* 待辦列數多於面板高度時在面板內捲動，不壓到下面的業績詳情 */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .row {
