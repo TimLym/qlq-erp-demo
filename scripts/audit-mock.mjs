@@ -5,7 +5,9 @@ import { checkExtra } from './audit-extra.mjs'
 import { checkDates } from './audit-dates.mjs'
 
 const server = await createServer({ server: { middlewareMode: true }, logLevel: 'error' })
-const m = await server.ssrLoadModule('/src/mock/data.ts')
+const data = await server.ssrLoadModule('/src/mock/data.ts')
+const ep = await server.ssrLoadModule('/src/utils/execProgress.ts')
+const m = { ...data, ep }
 const { deals, quotes, orders, approvals, todos, purchaseOrders, dealMembers } = m
 const issues = []
 const byId = (arr, id) => arr.find((x) => x.id === id)
@@ -26,7 +28,6 @@ for (const o of orders) {
       if (o.voidedAt && d.stage !== '未成交') issues.push(`保證單 ${o.soNo} 已作廢，商機 ${d.dealNo} 應為未成交`)
       if (!quotes.some((q) => q.id === o.quoteId && q.status === '報價回簽')) issues.push(`保證單 ${o.soNo} 應對應客戶已回簽的報價版本`)
     } else if (d.stage !== 'SO已成立') issues.push(`訂單 ${o.soNo} 存在（SO 只在上單核准後產生），商機 ${d.dealNo} 階段應為SO已成立，實際 ${d.stage}`)
-    if (o.stageIndex < 0 || o.stageIndex > 6) issues.push(`訂單 ${o.soNo} 的 stageIndex ${o.stageIndex} 超出 0–6（接單…驗收）`)
     if (d.customer !== o.customer) issues.push(`訂單 ${o.soNo} 客戶 ${o.customer} ≠ 商機 ${d.customer}`)
   }
   if (o.quoteId && !byId(quotes, o.quoteId)) issues.push(`訂單 ${o.soNo} 的報價版本 ${o.quoteId} 不存在`)
@@ -35,7 +36,8 @@ for (const o of orders) {
 // 技術服務單：待派工要有派工代辦；進行中的工程師要是成員且有工程代辦；成員裡的工程師要有進行中的單
 for (const d of deals) {
   for (const t of d.engRequests ?? []) {
-    if (!t.requestNo.startsWith(d.dealNo)) issues.push(`服務單 ${t.requestNo} 不屬於商機 ${d.dealNo}`)
+    const so = orders.find((o) => o.dealId === d.id)
+    if (!t.requestNo.startsWith(d.dealNo) && !(so && t.requestNo.startsWith(so.soNo))) issues.push(`服務單 ${t.requestNo} 不屬於商機 ${d.dealNo}`)
     if (t.status === '待派工' && !todos.some((x) => x.kind === '派工' && x.engRequestId === t.id)) issues.push(`服務單 ${t.requestNo} 待派工但工程主管沒有派工代辦`)
     const grp = (m.engGroups ?? []).find((g) => g.id === t.groupId)
     if (t.groupId && !grp) issues.push(`服務單 ${t.requestNo} 派給不存在的組`)
@@ -164,7 +166,7 @@ console.log('商機', deals.length, '｜報價單', quotes.length, '｜訂單', 
 console.log('\n對照表')
 for (const d of deals) {
   const qs = quotes.filter((q) => q.dealId === d.id).map((q) => `v${q.version}${q.status}`).join(' ')
-  const os = orders.filter((o) => o.dealId === d.id).map((o) => `${o.soNo}@${o.stageIndex}`).join(' ')
+  const os = orders.filter((o) => o.dealId === d.id).map((o) => `${o.soNo}@${o.acceptedAt ? '已驗收' : `到客戶${ep.pctText(ep.supplyProgress(o).delivered)}`}`).join(' ')
   const as = approvals.filter((a) => a.dealId === d.id).map((a) => `${a.type}${a.diff ? '重審' : ''}${a.postHoc ? '追認' : ''}:${a.status}`).join(' ')
   console.log(`${d.dealNo} ${d.customer}（${d.customerDept}） ${d.stage} ${d.owner} | 報價:${qs || '無'} | 訂單:${os || '無'} | 簽核:${as || '無'}`)
 }

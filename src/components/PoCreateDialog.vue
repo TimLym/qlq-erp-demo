@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { orders, deals, quotes, purchaseOrders, stock, type PurchaseOrder, type PoLine, type Role, quoteTotal } from '../mock/data'
+import { orders, deals, quotes, purchaseOrders, stock, natureOf, type PurchaseOrder, type PoLine, type Role, quoteTotal } from '../mock/data'
 import { routing, evaluate } from '../mock/routing'
 import { useAppStore } from '../stores/app'
 import { money } from '../utils/format'
@@ -10,12 +10,12 @@ const props = defineProps<{ modelValue: boolean; soNo?: string }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: boolean): void; (e: 'created', poNos: string[]): void }>()
 const store = useAppStore()
 
-/* 來源：接單到已入庫之間、還沒建 PO 的訂單；或勾了預下單、還沒上單的商機 */
+/* 來源：還沒驗收、還沒建 PO 的訂單；或勾了預下單、還沒上單的商機 */
 type Source = { key: string; label: string; soNo: string; customer: string; dealId: string; quoteId?: string; preOrder: boolean; orderId?: string }
 const sources = computed<Source[]>(() => {
   const list: Source[] = []
   orders
-    .filter((o) => o.stageIndex <= 3 && !purchaseOrders.some((p) => p.soNo === o.soNo))
+    .filter((o) => !o.acceptedAt && !o.voidedAt && !purchaseOrders.some((p) => p.soNo === o.soNo))
     .forEach((o) => list.push({ key: o.soNo, label: `${o.soNo} ${o.customer}`, soNo: o.soNo, customer: o.customer, dealId: o.dealId, quoteId: o.quoteId, preOrder: false, orderId: o.id }))
   deals
     .filter((d) => d.preOrder && d.stage !== 'SO已成立' && d.stage !== '未成交' && !purchaseOrders.some((p) => p.soNo === `預下單 ${d.dealNo}`))
@@ -56,7 +56,7 @@ watch(
       .forEach((l) => {
         const buyQty = l.qty - Math.min(l.stockQty ?? 0, l.qty)
         if (!map.has(l.vendor)) map.set(l.vendor, { vendor: l.vendor, lines: [], terms: 'T/T 30 天', expectedAt: defaultDate() })
-        map.get(l.vendor)!.lines.push({ no: map.get(l.vendor)!.lines.length + 1, extName: l.extName + (buyQty < l.qty ? `（另 ${l.qty - buyQty} 台用庫存）` : ''), intSku: l.intSku, vendorSku: l.vendorSku, qty: buyQty, unitCost: l.unitCost ?? 0, estCost: l.unitCost ?? 0, useStock: false, stockFree: stockFree(l.intSku) })
+        map.get(l.vendor)!.lines.push({ no: map.get(l.vendor)!.lines.length + 1, extName: l.extName + (buyQty < l.qty ? `（另 ${l.qty - buyQty} 台用庫存）` : ''), intSku: l.intSku, vendorSku: l.vendorSku, qty: buyQty, unitCost: l.unitCost ?? 0, estCost: l.unitCost ?? 0, useStock: false, stockFree: stockFree(l.intSku), route: natureOf(l) === '授權' ? '直送' : '公司倉', srcLineNo: l.no })
       })
     groups.value = [...map.values()]
   },
@@ -132,7 +132,7 @@ function submit() {
       expectedAt: g.expectedAt,
       preOrder: s.preOrder,
       approvalId,
-      lines: g.lines.filter((l) => !l.useStock).map((l, idx) => ({ no: idx + 1, extName: l.extName, intSku: l.intSku, vendorSku: l.vendorSku, qty: l.qty, unitCost: l.unitCost })),
+      lines: g.lines.filter((l) => !l.useStock).map((l, idx) => ({ no: idx + 1, extName: l.extName, intSku: l.intSku, vendorSku: l.vendorSku, qty: l.qty, unitCost: l.unitCost, route: l.route ?? '公司倉', srcLineNo: l.srcLineNo })),
     }
     purchaseOrders.unshift(po)
     store.approvals.unshift({
@@ -207,7 +207,7 @@ function submit() {
         </div>
       </header>
       <table class="plain-table">
-        <thead><tr><th>#</th><th>品名 / 對內 SKU</th><th>原廠 SKU</th><th class="num">數量</th><th class="num">單位成本</th><th class="num">小計</th><th>公司庫存</th></tr></thead>
+        <thead><tr><th>#</th><th>品名 / 對內 SKU</th><th>原廠 SKU</th><th class="num">數量</th><th class="num">單位成本</th><th class="num">小計</th><th class="req">路線</th><th>公司庫存</th></tr></thead>
         <tbody>
           <tr v-for="l in g.lines" :key="l.no" :class="{ off: l.useStock }">
             <td class="num">{{ l.no }}</td>
@@ -220,12 +220,19 @@ function submit() {
             </td>
             <td class="num">{{ l.useStock ? '—' : money(l.qty * l.unitCost) }}</td>
             <td>
+              <el-select v-if="!l.useStock" v-model="l.route" size="small" class="route">
+                <el-option value="公司倉" label="進公司倉" />
+                <el-option value="直送" label="直送客戶" />
+              </el-select>
+              <span v-else class="muted small">—</span>
+            </td>
+            <td>
               <el-checkbox v-if="l.stockFree >= l.qty" v-model="l.useStock" size="small">改用庫存（可用 {{ l.stockFree }}）</el-checkbox>
               <span v-else class="muted small">{{ l.stockFree ? `可用 ${l.stockFree}，不足` : '無' }}</span>
             </td>
           </tr>
         </tbody>
-        <tfoot><tr><td colspan="5" class="foot-label">PO 金額</td><td class="num total">{{ money(groupAmount(g)) }}</td><td></td></tr></tfoot>
+        <tfoot><tr><td colspan="5" class="foot-label">PO 金額</td><td class="num total">{{ money(groupAmount(g)) }}</td><td></td><td></td></tr></tfoot>
       </table>
     </section>
 
@@ -244,6 +251,8 @@ function submit() {
 </template>
 
 <style scoped>
+.route { width: 110px; }
+.req::after { content: ' *'; color: var(--red); }
 .margin-box {
   display: flex;
   flex-wrap: wrap;

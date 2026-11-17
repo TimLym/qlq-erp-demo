@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import { Plus, Delete } from '@element-plus/icons-vue'
 import { orders, quotes, stock, purchaseOrders, type PurchaseOrder } from '../mock/data'
 import { useAppStore } from '../stores/app'
+import { warehouseShortOf } from '../utils/execProgress'
 import { money } from '../utils/format'
 
 const props = defineProps<{ po: PurchaseOrder | null }>()
@@ -13,22 +14,20 @@ const open = computed({ get: () => !!props.po, set: (v) => { if (!v) emit('close
 
 const STOCK = '公司庫存'
 interface Alloc { target: string; qty: number }
-interface LineForm { no: number; extName: string; intSku: string; unitCost: number; ordered: number; before: number; receiving: number; allocs: Alloc[] }
+/* direct：PO 項次選「直送客戶」，不入庫、不分配，登記送達即算到客戶 */
+interface LineForm { no: number; extName: string; intSku: string; unitCost: number; ordered: number; before: number; receiving: number; allocs: Alloc[]; direct: boolean; proof: string }
 const lines = ref<LineForm[]>([])
 
-/* 某張 SO 對某個料號還缺多少：報價版本需要量 − 已保留給它的庫存 */
+/* 某張訂單對某個料號還要進公司倉的量：扣掉已保留、已出貨；直送的不算（execProgress） */
 function needOf(soNo: string, sku: string) {
   const o = orders.find((x) => x.soNo === soNo)
-  const q = o?.quoteId ? quotes.find((x) => x.id === o.quoteId) : undefined
-  const need = q ? q.lines.filter((l) => l.intSku === sku && l.vendor !== '自有工程').reduce((s, l) => s + l.qty, 0) : 0
-  const held = stock.filter((s) => s.sku === sku && s.reservedFor === soNo).reduce((s, x) => s + x.reserved, 0)
-  return Math.max(0, need - held)
+  return o ? warehouseShortOf(o, sku) : 0
 }
 /* 可分配的對象：這張 PO 的 SO、其他等貨中且需要這個料號的 SO、公司庫存 */
 function targetsFor(sku: string) {
   const list: { value: string; label: string }[] = []
   orders
-    .filter((o) => o.stageIndex <= 3)
+    .filter((o) => !o.acceptedAt && !o.voidedAt)
     .forEach((o) => {
       const n = needOf(o.soNo, sku)
       if (n > 0 || o.soNo === props.po?.soNo) list.push({ value: o.soNo, label: `${o.soNo} ${o.customer}（缺 ${n}）` })
@@ -42,10 +41,11 @@ watch(
   (po) => {
     if (!po) return
     lines.value = po.lines.map((l) => {
-      const before = l.received ?? 0
+      const direct = l.route === '直送'
+      const before = direct ? (l.delivered ?? 0) : (l.received ?? 0)
       const receiving = l.qty - before
       const target = po.soNo.startsWith('SO-') ? po.soNo : STOCK
-      return { no: l.no, extName: l.extName, intSku: l.intSku, unitCost: l.unitCost, ordered: l.qty, before, receiving, allocs: receiving > 0 ? [{ target, qty: receiving }] : [] }
+      return { no: l.no, extName: l.extName, intSku: l.intSku, unitCost: l.unitCost, ordered: l.qty, before, receiving, allocs: receiving > 0 && !direct ? [{ target, qty: receiving }] : [], direct, proof: '' }
     })
   },
   { immediate: true },
@@ -55,6 +55,7 @@ const allocSum = (l: LineForm) => l.allocs.reduce((s, a) => s + a.qty, 0)
 const addAlloc = (l: LineForm) => l.allocs.push({ target: STOCK, qty: Math.max(0, l.receiving - allocSum(l)) })
 /* 改到貨數量：只有一筆分配時跟著變；多筆時把差額調整到最後一筆 */
 function syncAlloc(l: LineForm) {
+  if (l.direct) return
   if (!l.allocs.length) {
     if (l.receiving > 0) l.allocs.push({ target: props.po?.soNo.startsWith('SO-') ? props.po.soNo : STOCK, qty: l.receiving })
     return
@@ -69,7 +70,7 @@ const problems = computed(() =>
   lines.value.flatMap((l) => {
     const out: string[] = []
     if (l.receiving < 0 || l.receiving > l.ordered - l.before) out.push(`項次 ${l.no} 到貨數量超過未到量`)
-    if (l.receiving > 0 && allocSum(l) !== l.receiving) out.push(`項次 ${l.no} 分配合計 ${allocSum(l)} ≠ 到貨 ${l.receiving}`)
+    if (l.receiving > 0 && !l.direct && allocSum(l) !== l.receiving) out.push(`項次 ${l.no} 分配合計 ${allocSum(l)} ≠ 到貨 ${l.receiving}`)
     l.allocs.forEach((a) => {
       if (a.target !== STOCK && a.qty > needOf(a.target, l.intSku) && a.target !== props.po?.soNo) out.push(`項次 ${l.no} 分給 ${a.target} 超過它的缺量`)
     })
@@ -84,8 +85,13 @@ function confirm() {
   const touched = new Set<string>()
   const batchesOf = new Map<string, string[]>()
   let batches = 0
+  const delivered: string[] = []
   lines.value.forEach((l) => {
     if (l.receiving <= 0) return
+    if (l.direct) {
+      if (store.deliverDirect(po, l.no, l.receiving, l.proof)) delivered.push(`${l.extName} ${l.receiving}`)
+      return
+    }
     const poLine = po.lines.find((x) => x.no === l.no)!
     l.allocs.forEach((a) => {
       if (a.qty <= 0) return
@@ -112,11 +118,11 @@ function confirm() {
     })
     poLine.received = l.before + l.receiving
   })
-  const complete = po.lines.every((l) => (l.received ?? 0) >= l.qty)
+  const complete = po.lines.every((l) => (l.route === '直送' ? (l.delivered ?? 0) : (l.received ?? 0)) >= l.qty)
   /* 料沒到齊仍是「已下單」，到齊才「已到貨」 */
   po.status = complete ? '已到貨' : '已下單'
   po.receivedAt = ymd
-  /* 收到貨的 SO：先「進貨」，料齊了就「已入庫」 */
+  /* 收到貨的訂單：寫流程紀錄；料齊了提醒可以出貨 */
   const ready: string[] = []
   const batchText = (soNo: string) => `，批次 ${(batchesOf.get(soNo) ?? []).join('、')}`
   touched.forEach((soNo) => {
@@ -124,16 +130,10 @@ function confirm() {
     const q = o?.quoteId ? quotes.find((x) => x.id === o.quoteId) : undefined
     if (!o || !q) return
     const allHeld = q.lines.filter((l) => l.vendor !== '自有工程').every((l) => needOf(soNo, l.intSku) === 0)
-    if (allHeld && o.stageIndex < 3) {
-      o.stageIndex = 3
-      ready.push(soNo)
-      store.logOrder(o, '執行', `PO ${po.poNo} 到貨入庫${batchText(soNo)}，進入「已入庫」階段`)
-    } else if (!allHeld && o.stageIndex < 2) {
-      o.stageIndex = 2
-      store.logOrder(o, '執行', `PO ${po.poNo} 部分到貨${batchText(soNo)}，進入「進貨」階段`)
-    } else store.logOrder(o, '執行', `PO ${po.poNo} 到貨${batchText(soNo)}`)
+    if (allHeld) ready.push(soNo)
+    store.logOrder(o, '執行', `PO ${po.poNo} ${allHeld ? '到貨入庫' : '部分到貨'}${batchText(soNo)}`)
   })
-  store.notifications.unshift({
+  if (batches) store.notifications.unshift({
     id: `n-${Date.now()}`,
     kind: '系統',
     text: `PO ${po.poNo} ${complete ? '已到貨' : '部分到貨'}，${batches} 批進入內湖倉${ready.length ? `；${ready.join('、')} 料齊，可安排出貨` : ''}`,
@@ -141,7 +141,7 @@ function confirm() {
     read: false,
     forRoles: ['業務', '業務主管', '採購'],
   })
-  ElMessage.success(`${complete ? '已到貨' : '部分到貨'}：${batches} 批進庫存${ready.length ? `，${ready.join('、')} 進到「到貨」階段` : ''}`)
+  ElMessage.success([batches ? `${batches} 批進庫存${ready.length ? `，${ready.join('、')} 料齊可出貨` : ''}` : '', delivered.length ? `直送客戶：${delivered.join('、')}` : ''].filter(Boolean).join('；'))
   emit('received', po)
   emit('close')
 }
@@ -149,21 +149,25 @@ const siblingNote = computed(() => (props.po ? purchaseOrders.filter((p) => p.so
 </script>
 
 <template>
-  <el-dialog v-model="open" title="到貨入庫與分配" width="900px">
+  <el-dialog v-model="open" title="到貨入庫與送達" width="900px">
     <template v-if="po">
       <p class="muted small head-note">
         PO {{ po.poNo }} · {{ po.vendor }} · 對應 {{ po.soNo }}{{ siblingNote ? `（同一張 SO 另有 ${siblingNote} 張 PO）` : '' }}
       </p>
       <section v-for="l in lines" :key="l.no" class="line">
         <header class="line-head">
-          <div><b>{{ l.no }}. {{ l.extName }}</b><span class="muted small">{{ l.intSku }} · 單位成本 {{ money(l.unitCost) }}</span></div>
+          <div><b>{{ l.no }}. {{ l.extName }}</b><span v-if="l.direct" class="tag amber">直送客戶</span><span class="muted small">{{ l.intSku }} · 單位成本 {{ money(l.unitCost) }}</span></div>
           <div class="qty">
-            <span class="muted small">訂購 {{ l.ordered }}{{ l.before ? `，已到 ${l.before}` : '' }}</span>
-            <span>本次到貨</span>
+            <span class="muted small">訂購 {{ l.ordered }}{{ l.before ? `，已${l.direct ? '送達' : '到'} ${l.before}` : '' }}</span>
+            <span>{{ l.direct ? '本次送達客戶' : '本次到貨' }}</span>
             <el-input-number v-model="l.receiving" :min="0" :max="l.ordered - l.before" :controls="false" size="small" class="n" @change="syncAlloc(l)" />
           </div>
         </header>
-        <table v-if="l.receiving > 0" class="plain-table inner">
+        <div v-if="l.direct && l.receiving > 0" class="proof">
+          <el-input v-model="l.proof" size="small" placeholder="送達證明檔名（選填）：例如原廠出貨通知、物流簽收單" style="width: 420px" />
+          <span class="muted small">不入庫、不分配；登記後這張訂單的這個項次就算到客戶</span>
+        </div>
+        <table v-else-if="l.receiving > 0" class="plain-table inner">
           <thead><tr><th>分配給</th><th class="num">數量</th><th></th></tr></thead>
           <tbody>
             <tr v-for="(a, i) in l.allocs" :key="i">
@@ -190,12 +194,13 @@ const siblingNote = computed(() => (props.po ? purchaseOrders.filter((p) => p.so
     </template>
     <template #footer>
       <el-button @click="emit('close')">取消</el-button>
-      <el-button type="primary" :disabled="problems.length > 0 || !lines.some((l) => l.receiving > 0)" @click="confirm">確認到貨並入庫</el-button>
+      <el-button type="primary" :disabled="problems.length > 0 || !lines.some((l) => l.receiving > 0)" @click="confirm">確認</el-button>
     </template>
   </el-dialog>
 </template>
 
 <style scoped>
+.proof { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .head-note {
   margin: 0 0 12px;
 }

@@ -8,6 +8,7 @@ import { useJump } from '../../composables/useJump'
 import EngSupportCard from '../../components/EngSupportCard.vue'
 import { ArrowDown, ArrowRight } from '@element-plus/icons-vue'
 import { localToday } from '../../utils/format'
+import { deployTickets } from '../../utils/execProgress'
 
 /*
  * 工程服務：工程主管、工程師的工作頁（執行長檢視）。
@@ -37,7 +38,7 @@ const cases = computed<Case[]>(() =>
         tickets,
         all,
         pendingStart: o ? o.licenses.filter((l) => !hasExpiryDate(l) && !!l.months) : [],
-        toClose: !!o && !o.engClosedAt && all.length > 0 && all.every((t) => DONE.includes(t.status)),
+        toClose: !!o && !o.engClosedAt && deployTickets(o).length > 0 && deployTickets(o).every((t) => DONE.includes(t.status)),
         closed: !!o?.engClosedAt,
       }
     })
@@ -123,7 +124,7 @@ async function engClose(o: Order) {
   const ok = await ElMessageBox.confirm(`${o.soNo} 工程結案？`, '工程結案', { confirmButtonText: '結案', cancelButtonText: '取消' }).then(() => true, () => false)
   if (!ok) return
   if (!store.closeEngineering(o)) {
-    ElMessage.warning('還有服務單沒完成，不能工程結案')
+    ElMessage.warning('還有部署服務單沒完成，不能工程結案')
     return
   }
   ElMessage.success(isOrderClosed(o) ? '工程已結案，訂單結案' : '工程已結案')

@@ -32,7 +32,7 @@ const rows = computed(() => {
 })
 const countOf = (t: AttachmentType) => attachments.value.filter((a) => a.type === t && !a.voided).length
 
-const typeTag: Record<AttachmentType, string> = { 客戶回簽: 'teal', 廠商報價單: 'slate', 廠商簽回: 'olive', 出貨簽收: 'teal', '報價單 PDF': 'slate', 行政申請: 'amber', 供應商文件: 'olive', 其他: 'slate' }
+const typeTag: Record<AttachmentType, string> = { 客戶回簽: 'teal', 廠商報價單: 'slate', 廠商簽回: 'olive', 出貨簽收: 'teal', 驗收單: 'olive', '報價單 PDF': 'slate', 行政申請: 'amber', 供應商文件: 'olive', 其他: 'slate' }
 </script>
 
 <template>

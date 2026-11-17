@@ -14,10 +14,11 @@ import MilestoneSummaryCard from './MilestoneSummaryCard.vue'
 import MilestoneDialog from './MilestoneDialog.vue'
 import MarginGauge from './MarginGauge.vue'
 import { useQuoteSubmit } from '../composables/useQuoteSubmit'
-import { deals, quotes, orders, execStages, isOrderClosed, isGuarantee, guaranteeReasons, quoteTotal, pipelineStages, stageDefaultProb, isIdle, stageIdleDays, type Deal, type Milestone, type PipelineStage, type GuaranteeReason } from '../mock/data'
+import { deals, quotes, orders, isOrderClosed, isGuarantee, guaranteeReasons, quoteTotal, pipelineStages, stageDefaultProb, isIdle, stageIdleDays, type Deal, type Milestone, type PipelineStage, type GuaranteeReason } from '../mock/data'
 import { useAppStore } from '../stores/app'
 import { evaluate, routing } from '../mock/routing'
 import { money, pct, dateTime } from '../utils/format'
+import { supplyProgress, pctText } from '../utils/execProgress'
 
 const props = defineProps<{ dealId: string | null; initialTab?: 'basic' | 'quotes' | 'comments' | 'files'; initialQuoteId?: string }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'open', id: string): void }>()
@@ -321,7 +322,7 @@ const stageTag: Record<string, string> = {
             <span class="num">{{ deal.dealNo }}</span>
             <span class="tag" :class="stageTag[deal.stage]">{{ deal.stage }}</span>
             <button v-if="dealOrder && isGuarantee(dealOrder) && canOrdersPage" type="button" class="tag amber link" :title="`開啟保證單 ${dealOrder.soNo}`" @click="openOrder(dealOrder.soNo)">保證單 {{ dealOrder.soNo }} · {{ dealOrder.guaranteeReason }}</button>
-            <span v-else-if="dealOrder" class="tag slate" :title="dealOrder.soNo">{{ dealOrder.soNo }} · {{ isOrderClosed(dealOrder) ? '結案' : execStages[dealOrder.stageIndex] }}</span>
+            <span v-else-if="dealOrder" class="tag slate" :title="dealOrder.soNo">{{ dealOrder.soNo }} · {{ isOrderClosed(dealOrder) ? '結案' : dealOrder.acceptedAt ? '已驗收' : `到客戶 ${pctText(supplyProgress(dealOrder).delivered)}` }}</span>
             <span v-if="deal.kind !== '新購'" class="tag slate">{{ deal.kind }}</span>
             <button v-if="renewalOf" type="button" class="tag teal link" :title="`開啟原商機 ${renewalOf.dealNo}`" @click="emit('open', renewalOf.id)">續約自 {{ renewalOf.dealNo }}<template v-if="renewalOfOrder"> · {{ renewalOfOrder.soNo }}</template></button>
             <button v-for="r in renewals" :key="r.id" type="button" class="tag teal link" :title="`開啟續約商機 ${r.dealNo}`" @click="emit('open', r.id)">續約商機 {{ r.dealNo }} · {{ r.stage }}</button>

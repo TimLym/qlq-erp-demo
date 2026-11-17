@@ -3,16 +3,15 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { quotes, stock, shipments, natureOf, addMonths, warrantyOf, type Order, type Shipment, type LineNature } from '../mock/data'
 import { useAppStore } from '../stores/app'
+import { supplyProgress } from '../utils/execProgress'
 
 const props = defineProps<{ order: Order | null }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'shipped', s: Shipment): void }>()
 const store = useAppStore()
 const open = computed({ get: () => !!props.order, set: (v) => { if (!v) emit('close') } })
 
-const DIRECT = '原廠直寄（不經入庫）'
 interface Pick { sku: string; name: string; need: number; batch: string; available: number; qty: number; unitCost: number; expires: string; hasLicense: boolean; nature: LineNature; months: number }
 const picks = ref<Pick[]>([])
-const direct = ref(false)
 const note = ref('')
 watch(
   () => props.order,
@@ -20,14 +19,19 @@ watch(
     if (!o) return
     const q = quotes.find((x) => x.id === o.quoteId)
     const list: Pick[] = []
+    /* 只出經公司倉的量：PO 選直送客戶的不用出貨單 */
+    const viaWh = new Map<string, number>()
+    supplyProgress(o).lines.forEach((l) => viaWh.set(l.intSku, (viaWh.get(l.intSku) ?? 0) + l.stockNeed))
     /* 已出貨的量依料號扣掉，只建議剩下的 */
     const shippedLeft = new Map<string, number>()
     shipments.filter((sh) => sh.orderId === o.id).flatMap((sh) => sh.lines).forEach((l) => shippedLeft.set(l.sku, (shippedLeft.get(l.sku) ?? 0) + l.qty))
     q?.lines.filter((l) => l.vendor !== '自有工程').forEach((l) => {
       /* 先進先出：先用保留給這張 SO 的批次，不夠再用公司庫存 */
-      const done = Math.min(shippedLeft.get(l.intSku) ?? 0, l.qty)
+      const want = Math.min(viaWh.get(l.intSku) ?? 0, l.qty)
+      viaWh.set(l.intSku, (viaWh.get(l.intSku) ?? 0) - want)
+      const done = Math.min(shippedLeft.get(l.intSku) ?? 0, want)
       shippedLeft.set(l.intSku, (shippedLeft.get(l.intSku) ?? 0) - done)
-      let need = l.qty - done
+      let need = want - done
       if (need <= 0) return
       const mine = stock.filter((s) => s.sku === l.intSku && s.reservedFor === o.soNo && s.reserved > 0).sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))
       const free = stock.filter((s) => s.sku === l.intSku && s.qty - s.reserved > 0).sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))
@@ -42,27 +46,25 @@ watch(
         list.push({ sku: l.intSku, name: l.extName, need: l.qty, batch: s.batch, available: avail, qty: take, unitCost: s.unitCost, expires: isLicense ? addMonths(new Date().toISOString().slice(0, 10), months) : '', hasLicense: isLicense, nature, months })
         need -= take
       }
-      /* 授權直接由原廠寄給客戶，不經入庫（1113）：不扣庫存，成本用報價內部單價 */
-      if (need > 0 && natureOf(l) === '授權') list.push({ sku: l.intSku, name: l.extName, need: l.qty, batch: DIRECT, available: need, qty: need, unitCost: l.unitCost ?? 0, expires: '', hasLicense: true, nature: '授權', months: l.months ?? 12 })
-      else if (need > 0) list.push({ sku: l.intSku, name: l.extName, need: l.qty, batch: '（庫存不足）', available: 0, qty: 0, unitCost: 0, expires: '', hasLicense: false, nature: natureOf(l), months: 0 })
+      /* 還沒到貨的量：列出來提醒，不擋這次出貨（之後再出剩餘項次） */
+      if (need > 0) list.push({ sku: l.intSku, name: l.extName, need: l.qty, batch: '（尚未到貨）', available: 0, qty: 0, unitCost: 0, expires: '', hasLicense: false, nature: natureOf(l), months: 0 })
     })
     picks.value = list
-    direct.value = false
     note.value = ''
   },
   { immediate: true },
 )
-const shortage = computed(() => picks.value.filter((p) => p.batch === '（庫存不足）'))
+const shortage = computed(() => picks.value.filter((p) => p.batch === '（尚未到貨）'))
 function confirm() {
   const o = props.order
-  if (!o || shortage.value.length) return
+  if (!o || !picks.value.some((p) => p.qty > 0)) return
   const ymd = new Date().toISOString().slice(0, 10)
   const shipNo = `S-${ymd.slice(0, 4)}-${ymd.slice(5, 7)}${ymd.slice(8, 10)}-${String(shipments.length + 1).padStart(3, '0')}`
   const lines: Shipment['lines'] = []
   picks.value.forEach((p) => {
     if (p.qty <= 0) return
     const s = stock.find((x) => x.batch === p.batch)
-    /* 扣庫存：保留的先扣保留，再扣數量；原廠直寄的授權不經庫存 */
+    /* 扣庫存：保留的先扣保留，再扣數量 */
     if (s) {
       if (s.reservedFor === o.soNo) s.reserved -= p.qty
       s.qty -= p.qty
@@ -72,16 +74,12 @@ function confirm() {
     if (p.hasLicense) o.licenses.push({ id: `lic-${Date.now()}-${o.licenses.length + 1}`, kind: '授權', sku: p.sku, name: p.name, qty: p.qty, months: p.months, expires: '—' })
     else if (p.nature === '硬體') o.licenses.push({ id: `lic-${Date.now()}-${o.licenses.length + 1}`, kind: '保固', sku: p.sku, name: `${p.name} 硬體保固`, qty: p.qty, months: p.months, expires: addMonths(ymd, p.months) })
   })
-  const sh: Shipment = { id: `sh-${Date.now()}`, shipNo, soNo: o.soNo, orderId: o.id, customer: o.customer, at: ymd, by: store.currentUser.name, direct: direct.value, note: note.value.trim() || undefined, lines, status: '已出貨' }
+  const sh: Shipment = { id: `sh-${Date.now()}`, shipNo, soNo: o.soNo, orderId: o.id, customer: o.customer, at: ymd, by: store.currentUser.name, note: note.value.trim() || undefined, lines, status: '已出貨' }
   shipments.unshift(sh)
-  /* 全部項次都出完才是「全部出貨」，否則停在「部分出貨」 */
-  const needQty = (quotes.find((x) => x.id === o.quoteId)?.lines ?? []).filter((l) => l.vendor !== '自有工程').reduce((s, l) => s + l.qty, 0)
-  const shippedQty = shipments.filter((s) => s.orderId === o.id).flatMap((s) => s.lines).reduce((s, l) => s + l.qty, 0)
-  o.stageIndex = Math.max(o.stageIndex, shippedQty >= needQty ? 5 : 4)
-  store.logOrder(o, '執行', `出貨單 ${shipNo} 建立${direct.value ? '（原廠直送）' : ''}，進入「${o.stageIndex === 5 ? '全部出貨' : '部分出貨'}」階段`)
+  store.logOrder(o, '執行', `出貨單 ${shipNo} 建立${shortage.value.length ? '（部分出貨）' : ''}`)
   store.addAttachment({ type: '其他', refNo: o.soNo, party: o.customer, fileName: `${shipNo}-出貨單.pdf`, sizeKb: 180 })
   store.todos.unshift({ id: `t-${Date.now()}-sign`, kind: '簽收', title: `${o.customer} 出貨單 ${shipNo} 待客戶簽收`, refNo: o.soNo, forRoles: ['業務'], forUserIds: [store.users.find((u) => u.name === o.owner)?.id ?? store.currentUserId], route: '/sales/orders', createdAt: new Date().toISOString() })
-  ElMessage.success(`出貨單 ${shipNo} 已建立，庫存已扣，${o.soNo} 進到「${o.stageIndex === 5 ? '全部出貨' : '部分出貨'}」；接著請客戶簽收`)
+  ElMessage.success(`出貨單 ${shipNo} 已建立，庫存已扣；客戶簽收後才算到客戶`)
   emit('shipped', sh)
   emit('close')
 }
@@ -103,14 +101,13 @@ function confirm() {
         </tbody>
       </table>
       <div class="opts">
-        <el-checkbox v-model="direct">原廠直送客戶（形式上仍建進貨與出貨，庫存不經倉）</el-checkbox>
         <el-input v-model="note" size="small" placeholder="備註：例如分兩批、客戶指定收件人" style="width: 360px" />
       </div>
-      <p v-if="shortage.length" class="problem">{{ shortage.map((s) => s.name).join('、') }} 庫存不足，請先在 PO 分配保留或等到貨</p>
+      <p v-if="shortage.length" class="muted small">{{ shortage.map((s) => s.name).join('、') }} 尚未到貨，這次先不出，之後再「出貨剩餘項次」</p>
     </template>
     <template #footer>
       <el-button @click="emit('close')">取消</el-button>
-      <el-button type="primary" :disabled="!picks.some((p) => p.qty > 0) || shortage.length > 0" @click="confirm">建立出貨單並扣庫存</el-button>
+      <el-button type="primary" :disabled="!picks.some((p) => p.qty > 0)" @click="confirm">建立出貨單並扣庫存</el-button>
     </template>
   </el-dialog>
 </template>

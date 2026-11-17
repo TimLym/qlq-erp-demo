@@ -4,7 +4,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Upload, Paperclip } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { orderActualCost, orders, quotes, deals, customers, shipments, purchaseOrders, isOrderClosed, isGuarantee, milestoneProblems, billingOf, billingTaxOf, milestoneTaxes, orderTaxTotal, withTax, TAX_RATE, type Order, type Quote, type Milestone, type Shipment, type License, expiryKinds } from '../mock/data'
+import { orderActualCost, orders, quotes, deals, customers, shipments, purchaseOrders, isOrderClosed, isGuarantee, milestoneProblems, milestoneTaxes, orderTaxTotal, withTax, TAX_RATE, type Order, type Quote, type Milestone, type Shipment, type License, expiryKinds } from '../mock/data'
 import { useAppStore } from '../stores/app'
 import { money, pct, dateTime } from '../utils/format'
 import DealDrawer from './DealDrawer.vue'
@@ -18,12 +18,14 @@ import EngSupportCard from './EngSupportCard.vue'
 import MembersDialog from './MembersDialog.vue'
 import UploadDialog from './UploadDialog.vue'
 import BillingRequestDialog from './BillingRequestDialog.vue'
-import { checkpointsOf, remainingToShip } from '../utils/checkpoints'
+import CollectNoticeDialog from './CollectNoticeDialog.vue'
+import AcceptDialog from './AcceptDialog.vue'
+import { supplyProgress, engProgress, canAccept, billingProgress, remainingToShip, pctText, deployTickets } from '../utils/execProgress'
 
 /*
- * 單張 SO 的抽屜，三層資訊：header 說「哪一張、誰的、多少錢」；概覽只放執行階段、財務階段與一條行動列；
+ * 單張訂單的抽屜：header 說「哪一張、誰的、多少錢」；摘要四塊（供應商採購、工程、開票、收款進度）與三個動作（開票、收款、驗收）；
  * 明細與操作各回自己的頁簽（請款與財務、交付與授權、紀錄與附件），同一種資訊只出現在一個地方。
- * 由下往上滑入、只蓋主內容區，全站抽屜統一（Pipeline、CRM、SO）。
+ * 由下往上滑入、只蓋主內容區，全站抽屜統一（Pipeline、CRM、訂單）。
  */
 const props = defineProps<{ orderId: string | null }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -71,17 +73,21 @@ watch(() => props.orderId, () => {
 
 const deal = computed(() => (o.value ? deals.find((d) => d.id === o.value!.dealId) : undefined))
 /*
- * 摘要列：執行面是不卡關的檢查點（下單、到貨、出貨、驗收、工程結案各自記），
- * 後面完成了前面沒補就標琥珀色提醒；財務面是未開票／已開票未收／已收款三個金額（含稅，另列未稅）。
+ * 摘要四塊（規劃_訂單執行進度.md）：供應商採購（下單、進貨、入庫、出貨＝到客戶）、工程（部署服務單）、
+ * 開票與收款（含稅金額、％、筆數）。百分比照未稅售價加權。
  */
 const today = new Date().toISOString().slice(0, 10)
-const checkpoints = computed(() => (o.value ? checkpointsOf(o.value) : []))
-const bill = computed(() => (o.value ? billingOf(o.value) : { total: 0, invoiced: 0, paid: 0, uninvoiced: 0, invoicedUnpaid: 0 }))
-/* 含稅：各期分攤後加總等於含稅總計，不逐區塊重算 */
-const billTax = computed(() => (o.value ? billingTaxOf(o.value) : { total: 0, invoiced: 0, paid: 0, uninvoiced: 0, invoicedUnpaid: 0 }))
+const supply = computed(() => (o.value ? supplyProgress(o.value) : null))
+const eng = computed(() => (o.value ? engProgress(o.value) : null))
+const acc = computed(() => (o.value ? canAccept(o.value) : { ok: false, reason: '' }))
+const bp = computed(() => (o.value ? billingProgress(o.value) : null))
 const msTax = computed(() => (o.value ? milestoneTaxes(o.value) : []))
 const billing = ref<{ order: Order; index?: number } | null>(null)
+const collecting = ref<Order | null>(null)
+const accepting = ref<Order | null>(null)
 const canRequest = computed(() => !!o.value && canOps.value && !isG.value && !voided.value && o.value.milestones.some((m) => m.status === '待請款'))
+const canCollect = computed(() => !!o.value && canOps.value && !isG.value && !voided.value && o.value.milestones.some((m) => m.status === '已開票'))
+const pctCls = (v: number | null | undefined) => (v === null || v === undefined ? '' : v >= 1 ? 'done' : v > 0 ? 'part' : '')
 
 /* 保證單：不計業績、可派工；不請款、不出貨、不合約變更；議價完上單核准轉正式 SO */
 const isG = computed(() => !!o.value && isGuarantee(o.value))
@@ -126,15 +132,17 @@ function saveNext() {
 }
 
 /* 工程服務：服務單在 SO 繼續開；工程提出結案，SO 才能整案結案 */
-const openTickets = computed(() => (deal.value?.engRequests ?? []).filter((t) => ['待派工', '待接受', '已派工', '已退回'].includes(t.status)))
-const canEngClose = computed(() => !!o.value && !o.value.engClosedAt && (['工程主管', '執行長'].includes(store.role) || (store.role === '工程師' && (deal.value?.engRequests ?? []).some((t) => t.assigneeIds.includes(store.currentUserId))) || (canOps.value && !(deal.value?.engRequests ?? []).length)))
+/* 工程結案只看自有工程項次對應的部署服務單；售前諮詢、POC、勘查不擋 */
+const deploy = computed(() => (o.value ? deployTickets(o.value) : []))
+const openTickets = computed(() => deploy.value.filter((t) => ['待派工', '待接受', '已派工', '已退回'].includes(t.status)))
+const canEngClose = computed(() => !!o.value && !o.value.engClosedAt && (['工程主管', '執行長'].includes(store.role) || (store.role === '工程師' && deploy.value.some((t) => t.assigneeIds.includes(store.currentUserId))) || (canOps.value && !deploy.value.length)))
 async function engClose() {
   const x = o.value
   if (!x) return
   const ok = await ElMessageBox.confirm(`${x.soNo} 工程結案？`, '工程結案', { confirmButtonText: '結案', cancelButtonText: '取消' }).then(() => true, () => false)
   if (!ok) return
   if (!store.closeEngineering(x)) {
-    ElMessage.warning('還有服務單沒完成，不能工程結案')
+    ElMessage.warning('還有部署服務單沒完成，不能工程結案')
     return
   }
   ElMessage.success(isOrderClosed(x) ? '工程已結案，訂單結案' : '工程已結案')
@@ -160,7 +168,6 @@ const caseCommentCount = computed(() => (deal.value ? store.comments.filter((c) 
 const kb = (n: number) => (n >= 1024 ? `${(n / 1024).toFixed(1)} MB` : `${n} KB`)
 const isRenewal = computed(() => !!deal.value?.renewalOfDealId)
 const closed = computed(() => !!o.value && isOrderClosed(o.value))
-const widthOf = (amt: number) => `${o.value && o.value.amount ? Math.min(100, Math.round((amt / o.value.amount) * 100)) : 0}%`
 /* 行動列裡的精簡雙進度：抽屜可能從通知直接打開，使用者未必看過列表 */
 /* 結案時名稱保留最後走到的階段（驗收／已收款），右側另標「✓ 結案」，使用者仍看得到結案前走到哪 */
 const nextIdx = computed(() => (o.value ? o.value.milestones.findIndex((m) => m.status !== '已收款') : -1))
@@ -244,7 +251,7 @@ const changeHint = computed(() => (!o.value ? '' : contractEnded.value ? `合約
 /* 合約結束日：業務填；可從驗收完成日起算一年 */
 const endEditing = ref(false)
 const endDraft = ref('')
-const acceptedAt = computed(() => shipments.filter((sh) => sh.orderId === o.value?.id && sh.signedAt).map((sh) => sh.signedAt!).sort().pop())
+const acceptedAt = computed(() => o.value?.acceptedAt)
 function editEnd() {
   endDraft.value = o.value?.contractEndAt ?? ''
   endEditing.value = true
@@ -296,16 +303,16 @@ const creatingShipment = ref<Order | null>(null)
 /* 出貨單由採購（倉管）建立，業務只做客戶簽收 */
 const canCreateShip = computed(() => !isG.value && canShipPage.value && ['採購', '採購主管', '執行長'].includes(store.role))
 const canShip = computed(() => !!o.value && remainingToShip(o.value) > 0 && !o.value.changeQuoteId)
-/* 驗收不必等出貨（1113：先驗收未出貨），前面沒補的由檢查點用琥珀色提醒 */
-const canSign = computed(() => !!o.value && !isG.value && (o.value.stageIndex < 6 || unsignedShipments.value > 0) && !o.value.changeQuoteId)
+/* 客戶簽收出貨單：交貨證明，簽了公司倉的貨才算到客戶；驗收另外按 */
+const canSign = computed(() => !!o.value && !isG.value && unsignedShipments.value > 0 && !o.value.changeQuoteId)
 const shipHint = computed(() => (!o.value ? '' : o.value.changeQuoteId ? '合約變更期間暫停出貨' : remainingToShip(o.value) === 0 ? '已全部出貨' : ''))
-const signHint = computed(() => (!o.value ? '' : o.value.changeQuoteId ? '合約變更期間暫停驗收' : o.value.stageIndex >= 6 ? '已驗收' : ''))
+const signHint = computed(() => (!o.value ? '' : o.value.changeQuoteId ? '合約變更期間暫停簽收' : ''))
 const unsignedShipments = computed(() => (o.value ? shipments.filter((s) => s.orderId === o.value!.id && s.status === '已出貨').length : 0))
 function onSigned(orderId: string, method: string, file: string) {
   const x = orders.find((y) => y.id === orderId)
   if (!x) return
   store.signOff(x, method, undefined, file)
-  ElMessage.success(`${x.customer} 已簽收（${method}），訂單進到「驗收」，業務收到通知`)
+  ElMessage.success(`${x.customer} 已簽收出貨單（${method}），貨算到客戶`)
 }
 
 /* 簽收檔：點檔名預覽（示範用紙本）；重新簽收走同一個簽收抽屜（iPad／連結／掃描），舊檔作廢並寫一筆流程紀錄 */
@@ -404,26 +411,42 @@ async function renewFromSo() {
         </div>
       </header>
 
-      <!-- 摘要列：所有頁簽都看得到 -->
+      <!-- 摘要：所有頁簽都看得到 -->
       <div class="summary" :class="{ done: closed }">
-        <div class="sum-block">
-          <span class="sum-label">執行</span>
+        <div v-if="supply && supply.ordered !== null" class="sum-block">
+          <span class="sum-label">供應商採購進度</span>
           <div class="cps">
-            <span v-for="c in checkpoints" :key="c.key" class="cp" :class="{ done: c.done, gap: c.gap, wait: !!c.wait }" :title="c.gap ? '後面已完成，這一步還沒補' : ''">{{ c.label }}<template v-if="c.done && c.at"> {{ c.at }}</template><template v-else-if="c.wait"> {{ c.wait }}</template></span>
-            <span v-if="closed" class="mini-terminal">✓ 結案</span>
-            <span v-else-if="o.changeQuoteId" class="mini-terminal amber">合約變更中</span>
+            <span class="cp" :class="pctCls(supply.ordered)">下單 {{ pctText(supply.ordered) }}</span>
+            <span class="cp" :class="pctCls(supply.received)">進貨 {{ pctText(supply.received) }}</span>
+            <span v-if="supply.stocked !== null" class="cp" :class="pctCls(supply.stocked)" :title="`經公司倉 ${supply.stockedQty}/${supply.stockNeedQty}；直送的貨不入庫`">入庫 {{ pctText(supply.stocked) }}<small>（公司倉 {{ supply.stockedQty }}/{{ supply.stockNeedQty }}）</small></span>
+            <span class="cp" :class="pctCls(supply.delivered)" title="到客戶：公司倉的貨客戶簽收出貨單、直送的貨採購登記送達">出貨 {{ pctText(supply.delivered) }}</span>
+            <span v-if="supply.pendingSign" class="cp wait">待簽收 {{ supply.pendingSign }}</span>
           </div>
         </div>
-        <div v-if="seeMoney && !isG" class="sum-block fin">
-          <span class="sum-label">財務（含稅，總額 {{ money(billTax.total) }}）</span>
-          <div class="fin-bar"><span class="paid" :style="{ width: widthOf(bill.paid) }"></span><span class="inv" :style="{ width: widthOf(bill.invoicedUnpaid) }"></span></div>
-          <div class="fin-nums">
-            <span>已收款 <b class="num">{{ money(billTax.paid) }}</b></span>
-            <span>已開票未收 <b class="num">{{ money(billTax.invoicedUnpaid) }}</b></span>
-            <span class="un">未開票 <b class="num">{{ money(billTax.uninvoiced) }}</b></span>
+        <div v-if="eng" class="sum-block">
+          <span class="sum-label">工程進度</span>
+          <div class="cps"><span class="cp" :class="pctCls(eng.pct)">{{ pctText(eng.pct) }}</span><span class="muted small">{{ eng.tickets.filter((t) => t.status === '已完成').length }}/{{ eng.tickets.length }} 張部署單</span></div>
+        </div>
+        <div v-if="seeMoney && !isG && bp" class="sum-block">
+          <span class="sum-label">開票進度（含稅）</span>
+          <div class="fin-line"><b class="num">{{ money(bp.invoiced) }}</b><span class="muted"> / {{ money(bp.total) }}</span><span class="cp" :class="pctCls(bp.invoicedPct)">{{ pct(bp.invoicedPct, 0) }}</span></div>
+          <span class="muted small">未開票 {{ money(bp.uninvoiced) }}　·　已開票 {{ bp.invCount }}/{{ bp.count }} 期</span>
+        </div>
+        <div v-if="seeMoney && !isG && bp" class="sum-block">
+          <span class="sum-label">收款進度（含稅）</span>
+          <div class="fin-line"><b class="num">{{ money(bp.paid) }}</b><span class="muted"> / {{ money(bp.total) }}</span><span class="cp" :class="pctCls(bp.paidPct)">{{ pct(bp.paidPct, 0) }}</span></div>
+          <span class="muted small">未收款 {{ money(bp.unpaid) }}　·　已收款 {{ bp.paidCount }}/{{ bp.count }} 期</span>
+        </div>
+        <div class="sum-block sum-end">
+          <span v-if="closed" class="mini-terminal">✓ 結案</span>
+          <span v-else-if="o.acceptedAt" class="mini-terminal">已驗收 {{ o.acceptedAt }}</span>
+          <span v-else-if="o.changeQuoteId" class="mini-terminal amber">合約變更中</span>
+          <div v-if="canOps && !isG && !voided" class="sum-acts">
+            <el-button size="small" :disabled="!canRequest" @click="billing = { order: o }">開票</el-button>
+            <el-button size="small" :disabled="!canCollect" @click="collecting = o">收款</el-button>
+            <el-button v-if="!o.acceptedAt" size="small" type="primary" :disabled="!acc.ok" :title="acc.reason" @click="accepting = o">驗收</el-button>
           </div>
         </div>
-        <el-button v-if="canRequest" type="primary" class="req-btn" @click="billing = { order: o }">通知財務開票</el-button>
       </div>
 
       <el-tabs v-model="tab" class="tabs">
@@ -507,13 +530,14 @@ async function renewFromSo() {
                   <td class="num"><b>{{ money(msTax[r.i] ?? withTax(r.m.amount)) }}</b></td>
                   <td class="id" :class="{ late: r.m.status === '待請款' && r.m.planInvoiceAt && r.m.planInvoiceAt <= today }">{{ mmdd(r.m.planInvoiceAt) }}</td>
                   <td class="id" :class="{ late: r.m.status !== '已收款' && r.m.planPayAt && r.m.planPayAt < today }">{{ mmdd(r.m.planPayAt) }}</td>
-                  <td><span class="tag" :class="msTag[r.m.status]">{{ r.m.status === '已申請' ? '待開票' : r.m.status === '待請款' ? '未開票' : r.m.status }}</span><div v-if="r.m.requestedAt" class="muted small">通知 {{ mmdd(r.m.requestedAt) }}</div></td>
+                  <td><span class="tag" :class="msTag[r.m.status]">{{ r.m.status === '已收款' ? '已收款' : r.m.status === '已開票' ? '待收款（已開票）' : '待開票' }}</span><div v-if="r.m.status === '已申請' && r.m.requestedAt" class="muted small">已通知會計 {{ mmdd(r.m.requestedAt) }}</div><div v-if="r.m.status === '已開票' && r.m.collectRequestedAt" class="muted small">已通知收款 {{ mmdd(r.m.collectRequestedAt) }}</div><div v-if="r.m.status === '已開票' && r.m.planPayAt && r.m.planPayAt < today" class="late small">逾期未收</div></td>
                   <td class="id">
                     <template v-if="r.m.invoiceNo"><div :title="r.m.invoicedAt">{{ r.m.invoiceNo }} · {{ mmdd(r.m.invoicedAt) }}</div><div class="muted small" :title="r.m.paidAt">{{ r.m.paidAt ? `收款 ${mmdd(r.m.paidAt)}` : '未收款' }}</div></template>
                     <template v-else>—</template>
                   </td>
                   <td class="acts">
-                    <el-button v-if="r.m.status === '待請款' && canOps" size="small" type="primary" @click="billing = { order: o, index: r.i }">通知開票</el-button>
+                    <el-button v-if="r.m.status === '待請款' && canOps" size="small" type="primary" @click="billing = { order: o, index: r.i }">開票</el-button>
+                    <el-button v-else-if="r.m.status === '已開票' && canOps" size="small" @click="collecting = o">收款</el-button>
                     <el-button v-else-if="(r.m.status === '已申請' || r.m.status === '已開票') && canArPage" size="small" type="primary" plain @click="goAr(o.soNo)">到應收處理</el-button>
                     <span v-else-if="r.m.status === '已申請'" class="muted small">等會計開票</span>
                     <span v-else-if="r.m.status === '已開票'" class="muted small">等客戶付款</span>
@@ -527,6 +551,24 @@ async function renewFromSo() {
 
         <el-tab-pane v-if="showTab.delivery" label="交付與授權" name="delivery">
           <div class="section">
+            <h3 class="sub">逐項次交付</h3>
+            <table v-if="supply && supply.lines.length" class="plain-table inner">
+              <thead><tr><th>項次</th><th>品項</th><th>路線</th><th class="num">數量</th><th class="num">下單</th><th class="num">進貨</th><th class="num">入庫</th><th class="num">到客戶</th><th>PO</th></tr></thead>
+              <tbody>
+                <tr v-for="(l, i) in supply.lines" :key="i">
+                  <td class="id">{{ l.itemNo }}</td>
+                  <td>{{ l.name }}<div class="muted small">{{ l.intSku }}　·　{{ l.nature }}</div></td>
+                  <td><span class="tag" :class="l.direct === l.need ? 'amber' : l.direct ? 'slate' : 'teal'">{{ l.direct === l.need ? '直送客戶' : l.direct ? `公司倉 ${l.need - l.direct}／直送 ${l.direct}` : '公司倉' }}</span></td>
+                  <td class="num">{{ l.need }}</td>
+                  <td class="num">{{ l.ordered }}</td>
+                  <td class="num">{{ l.received }}</td>
+                  <td class="num">{{ l.stockNeed ? `${l.stocked}/${l.stockNeed}` : '—' }}</td>
+                  <td class="num"><b>{{ l.delivered }}</b><div v-if="l.pendingSign" class="muted small">待簽收 {{ l.pendingSign }}</div></td>
+                  <td class="id small">{{ l.poNos.join('、') || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="muted small">沒有要交貨的項次（全部是自有工程）。</p>
             <h3 class="sub">採購單</h3>
             <table v-if="soPos.length" class="plain-table inner">
               <thead><tr><th>PO</th><th>供應商</th><th>狀態</th><th>預計交期</th><th>原廠簽回</th></tr></thead>
@@ -542,9 +584,8 @@ async function renewFromSo() {
             </table>
             <p v-else class="muted small">尚無採購單。</p>
             <div class="sub-head">
-              <h3 class="sub">簽收</h3>
+              <h3 class="sub">出貨與簽收</h3>
               <div class="sub-acts">
-                <el-button v-if="canOps && canSign && !unsignedShipments" size="small" @click="shipping = o">客戶驗收</el-button>
                 <el-button v-if="canCreateShip" size="small" :disabled="!canShip" :title="shipHint" @click="creatingShipment = o">{{ orderShipments.length && remainingToShip(o) > 0 ? '出貨剩餘項次' : '建立出貨單' }}</el-button>
               </div>
             </div>
@@ -598,7 +639,7 @@ async function renewFromSo() {
               <h3 class="sub">工程結案</h3>
               <div class="sub-acts">
                 <span v-if="o.engClosedAt" class="tag olive">已結案 {{ o.engClosedAt }}</span>
-                <el-button v-else-if="canEngClose" size="small" type="primary" :disabled="openTickets.length > 0" :title="openTickets.length ? `還有 ${openTickets.length} 張服務單未完成` : ''" @click="engClose">工程結案</el-button>
+                <el-button v-else-if="canEngClose" size="small" type="primary" :disabled="openTickets.length > 0" :title="openTickets.length ? `還有 ${openTickets.length} 張部署服務單未完成` : ''" @click="engClose">工程結案</el-button>
                 <span v-else class="muted small">未結案</span>
               </div>
             </div>
@@ -655,6 +696,8 @@ async function renewFromSo() {
     <ShipmentDetailDrawer :shipment="shipDetail" @close="shipDetail = null" />
     <MembersDialog v-model="membersOpen" :deal="deal ?? null" />
     <BillingRequestDialog :order="billing?.order ?? null" :index="billing?.index" @close="billing = null" />
+    <CollectNoticeDialog :order="collecting" @close="collecting = null" />
+    <AcceptDialog :order="accepting" @close="accepting = null" />
     <el-dialog v-model="endEditing" title="合約結束日" width="420px" append-to-body>
       <div class="end-form">
         <el-date-picker v-model="endDraft" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
@@ -1114,9 +1157,30 @@ async function renewFromSo() {
   gap: 6px;
 }
 
-.sum-block.fin {
-  flex: 1;
-  min-width: 300px;
+.sum-end {
+  margin-left: auto;
+  align-items: flex-end;
+}
+
+.sum-acts {
+  display: flex;
+  gap: 6px;
+}
+
+.fin-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.cp.part {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
+.cp small {
+  font-size: 11px;
 }
 
 .sum-label {

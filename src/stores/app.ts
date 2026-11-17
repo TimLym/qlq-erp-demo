@@ -58,7 +58,9 @@ import {
   orderLinesFromQuote,
   isGuarantee,
   type GuaranteeReason,
+  type PurchaseOrder,
 } from '../mock/data'
+import { canAccept, deployTickets } from '../utils/execProgress'
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -663,26 +665,104 @@ export const useAppStore = defineStore('app', () => {
 
   const ownerIdOf = (o: Order) => users.find((u) => u.name === o.owner)?.id
 
-  /* 客戶簽收：四個入口（SO 抽屜、簽核中心等待簽收、出貨單頁、客戶線上簽收）共用；
-   * 執行階段進到「驗收」、這張 SO 還沒簽的出貨單全部標已簽收、簽收代辦移除、寫流程紀錄、通知業務 */
+  /* 客戶簽收出貨單：四個入口（訂單抽屜、簽核中心等待簽收、出貨單頁、客戶線上簽收）共用。
+   * 簽收是交貨證明（公司倉的貨簽了才算到客戶），不是驗收；整案驗收另由業務按（acceptOrder） */
   function signOff(o: Order, method: string, by?: string, file?: string) {
     const now = new Date()
-    if (o.stageIndex < 6) o.stageIndex = 6
-    shipments.filter((s) => s.orderId === o.id && s.status === '已出貨').forEach((s) => {
+    const signed = shipments.filter((s) => s.orderId === o.id && s.status === '已出貨')
+    signed.forEach((s) => {
       s.status = '已簽收'
       s.signedAt = now.toISOString().slice(0, 10)
       s.method = method
       s.signFile = file
     })
     todos.value = todos.value.filter((t) => !(t.kind === '簽收' && t.refNo === o.soNo))
-    /* 保固、維護、服務合約：驗收日起算；授權由工程確認實際起算日（setLicenseStart） */
-    const ymd = now.toISOString().slice(0, 10)
+    logOrder(o, '執行', `出貨單 ${signed.map((x) => x.shipNo).join('、')} 客戶簽收（${method}）`, by)
+    notifications.value.unshift({ id: `n-${now.getTime()}-signed`, kind: '系統', text: `${o.customer} 已簽收 ${o.soNo} 出貨單（${method}）`, at: now.toISOString(), read: false, forRoles: ['業務', '業務主管'], forUserIds: ownerIdOf(o) ? [ownerIdOf(o)!] : undefined })
+  }
+
+  /* 整案驗收：貨都到客戶、工程 100% 才能按（canAccept）；附客戶驗收單。保固、維護、服務合約從驗收日起算；授權由工程確認起算日 */
+  function acceptOrder(o: Order, date: string, file: string): boolean {
+    if (!canAccept(o).ok || !file.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return false
+    if (!['業務', '業務主管', '執行長'].includes(role.value) || (role.value === '業務' && o.owner !== currentUser.value.name) || !can('/sales/orders', 'edit')) return false
+    o.acceptedAt = date
+    o.acceptFile = file.trim()
+    o.acceptedBy = currentUser.value.name
     o.licenses.filter((l) => !l.start && l.months && l.kind !== '授權').forEach((l) => {
-      l.start = ymd
-      l.expires = addMonths(ymd, l.months!)
+      l.start = date
+      l.expires = addMonths(date, l.months!)
     })
-    logOrder(o, '執行', `客戶簽收（${method}），進入「驗收」階段`, by)
-    notifications.value.unshift({ id: `n-${now.getTime()}-signed`, kind: '系統', text: `${o.customer} 已簽收 ${o.soNo}（${method}）`, at: now.toISOString(), read: false, forRoles: ['業務', '業務主管'], forUserIds: ownerIdOf(o) ? [ownerIdOf(o)!] : undefined })
+    attachments.value.unshift({ id: `f-${Date.now()}-acc`, type: '驗收單', refNo: o.soNo, party: o.customer, fileName: o.acceptFile, uploader: currentUser.value.name, at: new Date().toISOString(), sizeKb: 512, scan: '通過', hash: '—' })
+    logOrder(o, '執行', `整案驗收（驗收日 ${date}，附客戶驗收單 ${o.acceptFile}）${isOrderClosed(o) ? '，訂單結案' : ''}`)
+    notifications.value.unshift({ id: `n-${Date.now()}-acc`, kind: '系統', text: `${o.customer} ${o.soNo} 已完成整案驗收（${date}）`, at: new Date().toISOString(), read: false, forRoles: ['業務主管', '會計', '財務主管'] })
+    return true
+  }
+
+  /* 業務通知會計收款／催收：只能通知已開票、還沒收款的期數；入帳仍由會計在應收頁做 */
+  function requestCollect(o: Order, idxs: number[], note: string): boolean {
+    const ok = idxs.filter((i) => o.milestones[i]?.status === '已開票')
+    if (!ok.length || !can('/sales/orders', 'edit')) return false
+    const now = new Date()
+    ok.forEach((i) => {
+      const m = o.milestones[i]!
+      m.collectRequestedAt = now.toISOString().slice(0, 10)
+      m.collectNote = note.trim() || undefined
+    })
+    const what = ok.map((i) => `第 ${i + 1} 期`).join('、')
+    logOrder(o, '財務', `通知會計收款：${what}${note.trim() ? `（${note.trim()}）` : ''}`)
+    syncCollectTodo(o)
+    notifications.value.unshift({ id: `n-${now.getTime()}-col`, kind: '系統', text: `${currentUser.value.name} 通知收款：${o.customer} ${o.soNo} ${what}${note.trim() ? `（${note.trim()}）` : ''}`, at: now.toISOString(), read: false, forRoles: ['會計', '財務主管'] })
+    return true
+  }
+
+  /* 收款代辦：每張訂單只留一筆，列出已通知、還沒收款的期數；全部收完就拿掉 */
+  function syncCollectTodo(o: Order) {
+    const isCol = (t: Todo) => t.kind === '付款' && t.refNo === o.soNo && t.title.startsWith('收款／催收')
+    const prev = todos.value.find(isCol)
+    todos.value = todos.value.filter((t) => !isCol(t))
+    const idx = o.milestones.map((m, i) => (m.status === '已開票' && m.collectRequestedAt ? i : -1)).filter((i) => i >= 0)
+    if (!idx.length) return
+    const now = new Date()
+    todos.value.unshift({ id: prev?.id ?? `t-${now.getTime()}-col`, kind: '付款', title: `收款／催收：${o.customer} ${o.soNo} ${idx.map((i) => `第 ${i + 1} 期`).join('、')}`, refNo: o.soNo, due: new Date(now.getTime() + 3 * 86400000).toISOString().slice(0, 10), forRoles: ['會計'], route: `/accounting/ar?so=${encodeURIComponent(o.soNo)}`, createdAt: now.toISOString() })
+  }
+
+  /* 直送客戶的 PO 項次：採購登記送達（可附送達證明），送達量即算到客戶；授權項次登錄到期項目（待起算） */
+  function deliverDirect(po: PurchaseOrder, lineNo: number, qty: number, proof?: string): boolean {
+    const l = po.lines.find((x) => x.no === lineNo)
+    if (!l || l.route !== '直送' || po.status === '待核准' || qty <= 0 || qty > l.qty - (l.delivered ?? 0)) return false
+    const ymd = new Date().toISOString().slice(0, 10)
+    l.delivered = (l.delivered ?? 0) + qty
+    l.deliveredAt = ymd
+    if (proof?.trim()) l.deliveryProof = proof.trim()
+    if (po.lines.every((x) => (x.route === '直送' ? (x.delivered ?? 0) >= x.qty : (x.received ?? 0) >= x.qty))) {
+      po.status = '已到貨'
+      po.receivedAt = ymd
+    }
+    const o = orders.find((x) => x.id === po.orderId || x.soNo === po.soNo)
+    if (o) {
+      const q = quotes.find((x) => x.id === o.quoteId)
+      const ql = q?.lines.find((x) => x.intSku === l.intSku)
+      if (ql && natureOf(ql) === '授權' && !o.licenses.some((x) => x.sku === l.intSku)) o.licenses.push({ id: `lic-${Date.now()}`, kind: '授權', sku: l.intSku, name: l.extName, qty: l.qty, months: ql.months, expires: '—' })
+      logOrder(o, '執行', `PO ${po.poNo} ${l.extName} 直送客戶 ${qty}${proof?.trim() ? `（送達證明 ${proof.trim()}）` : ''}`)
+      notifications.value.unshift({ id: `n-${Date.now()}-dlv`, kind: '系統', text: `${o.customer} ${o.soNo}：${l.extName} ${qty} 已直送到客戶`, at: new Date().toISOString(), read: false, forRoles: ['業務'], forUserIds: ownerIdOf(o) ? [ownerIdOf(o)!] : undefined })
+    }
+    return true
+  }
+
+  /* 訂單成立：每個自有工程項次自動開一張「部署」服務單（記對應項次），等工程主管派工；已有的不重開 */
+  function openDeployTickets(o: Order) {
+    const d = deals.find((x) => x.id === o.dealId)
+    if (!d) return
+    const own = (o.lines ?? []).flatMap((it) => it.internal).filter((l) => l.vendor === '自有工程')
+    own.forEach((l) => {
+      if ((d.engRequests ?? []).some((t) => t.lineNo === l.no && t.status !== '已取消')) return
+      const now = new Date()
+      const t: EngRequest = { id: `er-${now.getTime()}-${l.no}`, requestNo: nextRequestNo(d), lineNo: l.no, status: '待派工', type: '部署', title: l.name, desc: `訂單成立自動開立：對應項次 ${l.no}「${l.name}」`, dueDate: new Date(now.getTime() + 21 * 86400000).toISOString().slice(0, 10), urgent: false, requestedById: currentUserId.value, requestedBy: o.owner, requestedAt: now.toISOString(), assigneeIds: [] }
+      d.engRequests = [...(d.engRequests ?? []), t]
+      syncEngineerMembers(d)
+      pushDispatchTodo(d, t)
+      logOrder(o, '執行', `自動開立部署服務單 ${t.requestNo}（項次 ${l.no}）`)
+    })
   }
 
   /* 重新簽收：同一張出貨單換一份簽收檔（iPad／連結／掃描都可以），舊附件作廢、寫一筆流程紀錄 */
@@ -737,6 +817,7 @@ export const useAppStore = defineStore('app', () => {
     m.status = '已收款'
     m.paidAt = now.toISOString().slice(0, 10)
     logOrder(o, '財務', `第 ${idx + 1} 期「${m.label}」收款 ${m.amount.toLocaleString()}${isOrderClosed(o) ? '，訂單結案' : ''}`)
+    syncCollectTodo(o)
     notifications.value.unshift({ id: `n-${now.getTime()}-paid`, kind: '收款到帳', text: `${o.customer} ${o.soNo} 第 ${idx + 1} 期 ${m.label} 已收款 ${m.amount.toLocaleString()}`, at: now.toISOString(), read: false, forRoles: ['業務'], forUserIds: ownerIdOf(o) ? [ownerIdOf(o)!] : undefined })
   }
 
@@ -894,7 +975,7 @@ export const useAppStore = defineStore('app', () => {
           if (qn) g.lines = orderLinesFromQuote(qn)
           if (qn) g.taxTotal = quoteTaxTotal(qn)
           logOrder(g, '合約', `議價完成，保證單 ${pre} 轉正式 SO ${g.soNo}`)
-          logOrder(g, '執行', '核准通過 SO 成立，進入「接單」階段')
+          logOrder(g, '執行', '核准通過 SO 成立')
           qn?.lines.forEach((l, i) => {
             const n = natureOf(l)
             if ((n === '維護合約' || n === '服務合約') && l.months) g.licenses.push({ id: `lic-${Date.now()}-${i + 1}`, kind: n, sku: l.intSku, name: l.extName, qty: l.qty, months: l.months, expires: '—' })
@@ -905,9 +986,9 @@ export const useAppStore = defineStore('app', () => {
           const d = deals.find((x) => x.id === a.dealId)
           const ymd = new Date().toISOString().slice(0, 10)
           const soNo = `SO-${ymd.slice(0, 4)}-${ymd.slice(5, 7)}${ymd.slice(8, 10)}-${String(orders.length + 10).padStart(3, '0')}`
-          order = { id: `o-${Date.now()}`, soNo, dealId: a.dealId, dealNo: d?.dealNo ?? a.refNo, customer: d?.customer ?? '', product: d?.product ?? '', owner: d?.owner ?? a.submitter, amount: a.amount, cost: a.cost ?? 0, stageIndex: 0, quoteId: a.quoteId, milestones: (a.milestones ?? milestonesFromTemplate('once', a.amount)).map((m) => ({ ...m })), licenses: [] }
+          order = { id: `o-${Date.now()}`, soNo, dealId: a.dealId, dealNo: d?.dealNo ?? a.refNo, customer: d?.customer ?? '', product: d?.product ?? '', owner: d?.owner ?? a.submitter, amount: a.amount, cost: a.cost ?? 0, quoteId: a.quoteId, milestones: (a.milestones ?? milestonesFromTemplate('once', a.amount)).map((m) => ({ ...m })), licenses: [] }
           orders.unshift(order)
-          logOrder(order, '執行', '核准通過 SO 成立，進入「接單」階段')
+          logOrder(order, '執行', '核准通過 SO 成立')
           /* 維護合約／服務合約項次：SO 成立就有一筆到期項目，起日等驗收；單次服務不產生 */
           const q0 = quotes.find((x) => x.id === order!.quoteId)
           /* 訂單明細：成立當下從核准版報價單快照，之後報價版本再變也不影響 SO */
@@ -932,6 +1013,7 @@ export const useAppStore = defineStore('app', () => {
           deal.prob = 0.95
           deal.updatedAt = new Date().toISOString()
         }
+        openDeployTickets(so)
         /* 用庫存的項次：SO 成立當下依先進先出保留批次給這張 SO；剩下要採購的才給採購代辦 */
         const q = quotes.find((x) => x.id === so.quoteId)
         let needBuy = false
@@ -971,9 +1053,8 @@ export const useAppStore = defineStore('app', () => {
             createdAt: new Date().toISOString(),
           })
         } else if (q) {
-          /* 全部用庫存：不用 PO，直接「已入庫」；公司成本＝保留批次成本＋自有工程 */
-          so.stageIndex = 3
-          logOrder(so, '執行', '全部用公司庫存，進入「已入庫」階段')
+          /* 全部用庫存：不用 PO；公司成本＝保留批次成本＋自有工程 */
+          logOrder(so, '執行', '全部用公司庫存，已保留批次')
           so.actualCost = stock.filter((s) => s.reservedFor === so.soNo).reduce((s, x) => s + x.reserved * x.unitCost, 0) + q.lines.filter((l) => l.vendor === '自有工程').reduce((s, l) => s + l.qty * (l.unitCost ?? 0), 0)
         }
       }
@@ -1009,8 +1090,7 @@ export const useAppStore = defineStore('app', () => {
           po.status = '已下單'
           const o = orders.find((x) => x.soNo === po.soNo)
           if (o) {
-            if (o.stageIndex < 1) o.stageIndex = 1
-            logOrder(o, '執行', `PO ${po.poNo} 核准，進入「已下單」階段`)
+            logOrder(o, '執行', `PO ${po.poNo} 核准`)
             /* 實際成本 = 這張 SO 所有已核准 PO 的金額 + 自有工程成本 */
             const poSum = purchaseOrders.filter((p) => p.soNo === o.soNo && p.status !== '待核准').reduce((s, p) => s + p.amount, 0)
             const q = quotes.find((x) => x.id === o.quoteId)
@@ -1175,7 +1255,7 @@ export const useAppStore = defineStore('app', () => {
     const g: Order = {
       id: `o-${now.getTime()}`, soNo: pre, guaranteeNo: pre, phase: '保證單', guaranteeReason: reason,
       dealId: d.id, dealNo: d.dealNo, customer: d.customer, product: d.product, owner: d.owner,
-      amount, taxTotal: quoteTaxTotal(q), cost, stageIndex: 0, quoteId: q.id,
+      amount, taxTotal: quoteTaxTotal(q), cost, quoteId: q.id,
       milestones: (q.milestones ?? milestonesFromTemplate('once', amount)).map((m) => ({ ...m })),
       licenses: [], lines: orderLinesFromQuote(q),
     }
@@ -1283,8 +1363,8 @@ export const useAppStore = defineStore('app', () => {
   /* 工程結案：工程提出結案，SO 才能整案結案（另需已驗收、全部收款） */
   function closeEngineering(o: Order): boolean {
     if (o.engClosedAt) return false
-    const d = deals.find((x) => x.id === o.dealId)
-    const ts = d?.engRequests ?? []
+    /* 只看這張訂單自有工程項次對應的部署服務單；售前諮詢、POC、勘查等不擋結案 */
+    const ts = deployTickets(o)
     if (ts.some((t) => !['已完成', '已取消'].includes(t.status))) return false
     const salesSide = ['業務', '業務主管', '執行長'].includes(role.value) && (role.value !== '業務' || o.owner === currentUser.value.name)
     /* 會議：工程師提出結案；負責過這個案子服務單的工程師、工程主管、執行長可結案，沒有服務單時業務端也可以 */
@@ -1376,6 +1456,10 @@ export const useAppStore = defineStore('app', () => {
     createGuarantee,
     voidGuarantee,
     signOff,
+    acceptOrder,
+    requestCollect,
+    deliverDirect,
+    openDeployTickets,
     resign,
     scopeNote,
     requestPreOrder,

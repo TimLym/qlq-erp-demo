@@ -119,7 +119,7 @@ async function editPayAt(r: Row) {
             <td class="num"><b>{{ money(r.tax) }}</b></td>
             <td class="id">{{ view === '待開票' ? mmdd(r.m.requestedAt) : mmdd(r.m.planInvoiceAt) }}</td>
             <td class="id" :class="{ over: r.overdue }">{{ mmdd(r.m.planPayAt) }}<div v-if="r.overdue" class="small over">逾期 {{ daysLate(r.m.planPayAt) }} 天</div></td>
-            <td class="id">{{ r.m.invoiceNo ?? '—' }}<div v-if="r.m.paidAt" class="muted small">收款 {{ mmdd(r.m.paidAt) }}</div></td>
+            <td class="id">{{ r.m.invoiceNo ?? '—' }}<div v-if="r.m.paidAt" class="muted small">收款 {{ mmdd(r.m.paidAt) }}</div><div v-else-if="r.m.status === '已開票' && r.m.collectRequestedAt" class="small notice" :title="r.m.collectNote">業務已通知收款 {{ mmdd(r.m.collectRequestedAt) }}<template v-if="r.m.collectNote">：{{ r.m.collectNote }}</template></div></td>
             <td>{{ r.o.owner }}</td>
             <td v-if="canEdit" class="acts">
               <template v-if="r.m.status === '已申請'">
@@ -143,6 +143,11 @@ async function editPayAt(r: Row) {
 </template>
 
 <style scoped>
+.notice {
+  color: var(--amber);
+  font-weight: 600;
+}
+
 .so-filter {
   margin-left: 8px;
 }

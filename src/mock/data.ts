@@ -106,6 +106,8 @@ export interface EngRequest {
   /** 業務開單時建議的工程師與理由（非必填，主管派工參考） */
   suggestedId?: string
   suggestReason?: string
+  /** 對應的自有工程項次（訂單成立時自動開的部署服務單）；有值的才算訂單的工程進度 */
+  lineNo?: number
 }
 
 /** 工程組：工程主管可以派給組，由組長派人 */
@@ -200,7 +202,10 @@ export const deals: Deal[] = reactive([
     id: 'd2', dealNo: 'D-2026-0922-001', customer: '北辰物流', customerDept: '總管理處', endUser: '北辰物流 桃園轉運中心', via: '中間商', kind: '新購',
     ownerId: 'u-chen', owner: '陳冠宇', dept: '北區業務', prob: 0.95, amount: 880_000, stage: 'SO已成立',
     updatedAt: '2026-10-06T11:05:00+08:00', expectClose: '2026-11-05', nextAction: '合約變更 v2 等客戶回簽，回簽後重審送審',
-    needsEng: false, preOrder: false, prepay: false, quoteVersions: 2,
+    needsEng: true, preOrder: false, prepay: false, quoteVersions: 2,
+    engRequests: [
+      { id: 'er-d2-T01', requestNo: 'SO-2026-1001-013-T01', lineNo: 3, status: '待派工', type: '部署', title: '安裝建置與政策移轉', desc: '訂單成立自動開立：對應項次 3「安裝建置與政策移轉」', dueDate: '2026-11-28', urgent: false, requestedById: 'u-chen', requestedBy: '陳冠宇', requestedAt: '2026-10-01T10:00:00+08:00', assigneeIds: [] },
+    ],
     product: 'Palo Alto PA-440 x2 + Threat Prevention',
   },
   {
@@ -258,7 +263,7 @@ export const deals: Deal[] = reactive([
     needsEng: true, preOrder: true, prepay: false, quoteVersions: 1,
     engRequests: [
       { id: 'er-006-T01', requestNo: 'D-2026-0930-006-T01', status: '已完成', type: '現場勘查', title: '六分點線路確認', desc: '六個分點線路與設備位置確認', dueDate: '2026-09-30', urgent: false, requestedById: 'u-lin', requestedBy: '林雅婷', requestedAt: '2026-09-22T09:00:00+08:00', assigneeIds: ['u-eng-wu'], assignedAt: '2026-09-23T10:00:00+08:00', assignedById: 'u-eng-mgr', arrivedAt: '2026-09-30T09:00:00+08:00', completedAt: '2026-09-30T18:00:00+08:00', workSummary: '六個分點線路與設備位置確認完成，兩個分點需加裝 PoE 交換器' },
-      { id: 'er-006-T02', requestNo: 'D-2026-0930-006-T02', status: '已派工', type: '部署', title: '六分點 SD-WAN 安裝', desc: '六分點 SD-WAN 安裝與設定', dueDate: '2026-11-20', urgent: false, requestedById: 'u-lin', requestedBy: '林雅婷', requestedAt: '2026-10-02T09:00:00+08:00', assigneeIds: ['u-eng-lee'], assignedAt: '2026-10-03T10:00:00+08:00', assignedById: 'u-eng-mgr' },
+      { id: 'er-006-T02', requestNo: 'D-2026-0930-006-T02', lineNo: 3, status: '已派工', type: '部署', title: '六分點 SD-WAN 安裝', desc: '六分點 SD-WAN 安裝與設定', dueDate: '2026-11-20', urgent: false, requestedById: 'u-lin', requestedBy: '林雅婷', requestedAt: '2026-10-02T09:00:00+08:00', assigneeIds: ['u-eng-lee'], assignedAt: '2026-10-03T10:00:00+08:00', assignedById: 'u-eng-mgr' },
       { id: 'er-006-T03', acceptedIds: [], requestNo: 'D-2026-0930-006-T03', status: '待接受', type: '售前諮詢', title: '第三分點 VPN 走法', desc: '第三分點 VPN 路由與切換方式確認，回覆客戶', dueDate: '2026-10-15', urgent: false, requestedById: 'u-lin', requestedBy: '林雅婷', requestedAt: '2026-10-05T09:00:00+08:00', assigneeIds: ['u-eng-wu'], assignedAt: '2026-10-05T11:00:00+08:00', assignedById: 'u-eng-mgr' },
     ],
     product: 'FortiGate 100F x6 SD-WAN',
@@ -276,7 +281,7 @@ export const deals: Deal[] = reactive([
     updatedAt: '2026-07-15T10:00:00+08:00', expectClose: '2026-07-15', nextAction: '已出貨，等客戶簽收',
     needsEng: true, preOrder: false, prepay: false, quoteVersions: 1,
     engRequests: [
-      { id: 'er-002-T01', requestNo: 'D-2026-0620-002-T01', status: '已完成', type: '部署', title: '防火牆主機安裝', desc: '防火牆主機安裝與授權啟用', dueDate: '2026-08-15', urgent: false, requestedById: 'u-chen', requestedBy: '陳冠宇', requestedAt: '2026-07-05T10:00:00+08:00', assigneeIds: ['u-eng-lee'], assignedAt: '2026-07-06T09:00:00+08:00', assignedById: 'u-eng-mgr', arrivedAt: '2026-08-14T10:00:00+08:00', completedAt: '2026-08-14T17:00:00+08:00', workSummary: '防火牆主機安裝上架、授權啟用、政策匯入並驗證通過' },
+      { id: 'er-002-T01', requestNo: 'D-2026-0620-002-T01', lineNo: 3, status: '已完成', type: '部署', title: '防火牆主機安裝', desc: '防火牆主機安裝與授權啟用', dueDate: '2026-08-15', urgent: false, requestedById: 'u-chen', requestedBy: '陳冠宇', requestedAt: '2026-07-05T10:00:00+08:00', assigneeIds: ['u-eng-lee'], assignedAt: '2026-07-06T09:00:00+08:00', assignedById: 'u-eng-mgr', arrivedAt: '2026-08-14T10:00:00+08:00', completedAt: '2026-08-14T17:00:00+08:00', workSummary: '防火牆主機安裝上架、授權啟用、政策匯入並驗證通過' },
       { id: 'er-002-T02', requestNo: 'D-2026-0620-002-T02', status: '已派工', type: '其他', title: '上線後健檢', desc: '檢查授權、告警與備份設定', dueDate: '2026-11-06', urgent: false, requestedById: 'u-chen', requestedBy: '陳冠宇', requestedAt: '2026-10-01T10:00:00+08:00', assigneeIds: ['u-eng-wu'], assignedAt: '2026-10-02T09:00:00+08:00', assignedById: 'u-eng-mgr' },
     ],
     product: 'FortiGate 100F x2 + UTP 3 年',
@@ -580,48 +585,16 @@ export interface Milestone {
   invoiceNo?: string
   invoicedAt?: string
   paidAt?: string
+  /** 業務通知會計收款／催收的時間與備註（入帳仍由會計做） */
+  collectRequestedAt?: string
+  collectNote?: string
 }
 /**
- * SO 執行進度：依客戶現行 ERP 的 9 階段命名。SO 在上單最後一關核准時才產生，所以從「接單」開始。
- * 前 7 步是執行階段（stageIndex）；開發票、收款由請款里程碑算成財務階段，兩者都到底才結案。
+ * 訂單執行進度改用百分比（utils/execProgress.ts）：接單 → 供應商採購（到客戶％）＋工程％ → 驗收。
+ * 結案＝已驗收、全部收款、工程結案，三項都成立（順序不限）。
  */
-export const execStages = ['接單', '已下單', '進貨', '已入庫', '部分出貨', '全部出貨', '驗收'] as const
-export const financeStages = ['待請款', '部分開票', '已開票', '部分收款', '已收款'] as const
-/** 結案：驗收完成且每一期都收款 */
-/** 結案＝已驗收、全部收款、工程結案，三項都成立（順序不限） */
-export function isOrderClosed(o: Pick<Order, 'stageIndex' | 'milestones' | 'engClosedAt'>): boolean {
-  return o.stageIndex >= 6 && o.milestones.length > 0 && o.milestones.every((m) => m.status === '已收款') && !!o.engClosedAt
-}
-/** 客戶習慣看的 n/9：交付 7 步（接單算 1）＋全部開票＋全部收款 */
-export function execProgress(o: Pick<Order, 'stageIndex' | 'milestones'>): number {
-  const invoiced = o.milestones.length > 0 && o.milestones.every((m) => m.status === '已開票' || m.status === '已收款')
-  return Math.min(o.stageIndex + 1, 7) + (invoiced ? 1 : 0) + (isOrderClosed(o) ? 1 : 0)
-}
-/** 工作焦點：現在在哪、下一步是什麼、誰負責；財務那一句與列表用的行動性標籤 */
-export function soFocusOf(o: Pick<Order, 'stageIndex' | 'milestones' | 'changeQuoteId'>): { exec: string; next: string; owner: string; fin: string; finTag: string; finCls: string } {
-  const execNext: [string, string][] = [['通知採購下單', '採購'], ['廠商到貨', '採購'], ['入庫並保留批次', '採購'], ['建立出貨單', '業務'], ['出貨剩餘項次', '業務'], ['客戶簽收', '業務']]
-  const ms = o.milestones
-  const i = ms.findIndex((m) => m.status !== '已收款')
-  const m = i >= 0 ? ms[i] : undefined
-  const fin = !ms.length ? '尚未設定請款條件' : !m ? '全部收款' : m.status === '待請款' ? `第 ${i + 1} 期待請款` : m.status === '已申請' ? `第 ${i + 1} 期等會計開票` : `第 ${i + 1} 期等客戶付款`
-  const [finTag, finCls] = !m ? ['已收款', 'olive'] : m.status === '已申請' ? ['待會計開票', 'amber'] : m.status === '已開票' ? ['待收款', 'teal'] : ['待請款', 'slate']
-  if (o.changeQuoteId) return { exec: '合約變更中', next: '完成合約變更重審', owner: '業務', fin, finTag, finCls }
-  if (o.stageIndex < 6) {
-    const [next, owner] = execNext[o.stageIndex]!
-    return { exec: execStages[o.stageIndex]!, next, owner, fin, finTag, finCls }
-  }
-  const next = !m ? '已結案' : m.status === '待請款' ? `申請第 ${i + 1} 期請款` : m.status === '已申請' ? `第 ${i + 1} 期等會計開票` : `第 ${i + 1} 期等客戶付款`
-  return { exec: '驗收', next, owner: !m ? '—' : m.status === '待請款' ? '業務' : '會計', fin, finTag, finCls }
-}
-export function financeStageOf(ms: Milestone[]): number {
-  if (!ms.length) return 0
-  const paid = ms.filter((m) => m.status === '已收款').length
-  const invoiced = ms.filter((m) => m.status === '已開票' || m.status === '已收款').length
-  if (paid === ms.length) return 4
-  if (paid > 0) return 3
-  if (invoiced === ms.length) return 2
-  if (invoiced > 0) return 1
-  return 0
+export function isOrderClosed(o: Pick<Order, 'acceptedAt' | 'milestones' | 'engClosedAt'>): boolean {
+  return !!o.acceptedAt && o.milestones.length > 0 && o.milestones.every((m) => m.status === '已收款') && !!o.engClosedAt
 }
 export const milestoneTemplates: { key: string; label: string; parts: { label: string; pct: number }[] }[] = [
   { key: 'once', label: '驗收後一次請款', parts: [{ label: '驗收後一次請款', pct: 100 }] },
@@ -689,7 +662,10 @@ export interface Order {
   owner: string
   amount: number
   cost: number
-  stageIndex: number
+  /** 整案驗收：貨都到客戶、工程 100% 後由業務按，附客戶驗收單；保固、維護、服務合約從驗收日起算 */
+  acceptedAt?: string
+  acceptFile?: string
+  acceptedBy?: string
   /** 送審時鎖定的報價版本 */
   quoteId?: string
   /** 合約變更中的新報價版本（草稿→報價回簽→重審送審），核准後併入 quoteId */
@@ -734,7 +710,7 @@ export interface OrderLine {
   internal: { no: number; intSku: string; name: string; vendorSku: string; qty: number; unitCost: number | null; vendor: string; nature: LineNature; months?: number; stockQty?: number }[]
 }
 
-/* ---------- 財務：開票與收款兩個金額（未稅；畫面另顯示含稅，對齊以含稅為準） ---------- */
+/* ---------- 財務：含稅金額（各期含稅換算，對齊以含稅為準；開票、收款進度見 utils/execProgress.ts） ---------- */
 export const withTax = (n: number) => Math.round(n * (1 + TAX_RATE))
 /** 訂單含稅總計：SO 成立時帶入的含稅總計為準，沒有才由未稅換算 */
 export const orderTaxTotal = (o: Pick<Order, 'amount' | 'taxTotal'>) => o.taxTotal ?? withTax(o.amount)
@@ -743,19 +719,6 @@ export function milestoneTaxes(o: Pick<Order, 'amount' | 'taxTotal' | 'milestone
   const arr = o.milestones.map((m) => withTax(m.amount))
   if (arr.length) arr[arr.length - 1]! += orderTaxTotal(o) - arr.reduce((n, x) => n + x, 0)
   return arr
-}
-/** 開票與收款兩個金額（含稅） */
-export function billingTaxOf(o: Pick<Order, 'amount' | 'taxTotal' | 'milestones'>) {
-  const mt = milestoneTaxes(o)
-  const total = orderTaxTotal(o)
-  const invoiced = o.milestones.reduce((n, m, i) => n + (m.status === '已開票' || m.status === '已收款' ? mt[i]! : 0), 0)
-  const paid = o.milestones.reduce((n, m, i) => n + (m.status === '已收款' ? mt[i]! : 0), 0)
-  return { total, invoiced, paid, uninvoiced: total - invoiced, invoicedUnpaid: invoiced - paid }
-}
-export function billingOf(o: Pick<Order, 'amount' | 'milestones'>) {
-  const invoiced = o.milestones.filter((m) => m.status === '已開票' || m.status === '已收款').reduce((n, m) => n + m.amount, 0)
-  const paid = o.milestones.filter((m) => m.status === '已收款').reduce((n, m) => n + m.amount, 0)
-  return { total: o.amount, invoiced, paid, uninvoiced: o.amount - invoiced, invoicedUnpaid: invoiced - paid }
 }
 /**
  * 實際成本（1113 決定：獎金用實際成本）：採購項次用 PO 實際成本、庫存項次用出貨批次成本、自有工程用標準成本；
@@ -855,17 +818,17 @@ export interface OrderLog {
 export const orders: Order[] = reactive([
   {
     id: 'o1', soNo: 'SO-2026-0929-012', dealId: 'd7', dealNo: 'D-2026-0820-001', customer: '台灣聯合租賃', product: 'Sophos XGS 2100 續約 2 年',
-    owner: '林雅婷', amount: 640_000, cost: 548_000, actualCost: 548_000, stageIndex: 1, quoteId: 'q7-1',
+    owner: '林雅婷', amount: 640_000, cost: 548_000, actualCost: 548_000, quoteId: 'q7-1',
     milestones: [{ label: '授權交付後一次請款', amount: 640_000, status: '待請款', planInvoiceAt: '2026-10-25', planPayAt: '2026-11-24' }],
     licenses: [],
     log: [
-      { at: '2026-10-03T10:20:00+08:00', by: '劉欣怡', track: '執行', text: 'PO 2026-10-01-003 核准，進入「已下單」階段' },
-      { at: '2026-09-29T11:00:00+08:00', by: '劉欣怡', track: '執行', text: '核准通過 SO 成立（事後追認），進入「接單」階段' },
+      { at: '2026-10-03T10:20:00+08:00', by: '劉欣怡', track: '執行', text: 'PO 2026-10-01-003 核准（直送客戶）' },
+      { at: '2026-09-29T11:00:00+08:00', by: '劉欣怡', track: '執行', text: '核准通過 SO 成立（事後追認）' },
     ],
   },
   {
     id: 'o3', soNo: 'SO-2026-0712-004', dealId: 'd10', dealNo: 'D-2026-0620-002', customer: '國昌建設', product: 'FortiGate 100F x2 + UTP 3 年',
-    owner: '陳冠宇', amount: 1_080_000, cost: 912_000, actualCost: 960_000, stageIndex: 5, quoteId: 'q10-1',
+    owner: '陳冠宇', amount: 1_080_000, cost: 912_000, actualCost: 960_000, quoteId: 'q10-1',
     contractEndAt: '2029-09-05',
     milestones: [{ label: '到貨後 50%', amount: 540_000, status: '已開票', planInvoiceAt: '2026-08-20', planPayAt: '2026-09-20', requestedAt: '2026-08-20', invoiceNo: 'AB-10234567', invoicedAt: '2026-08-22' }, { label: '驗收後 50%', amount: 540_000, status: '待請款', planInvoiceAt: '2026-09-30', planPayAt: '2026-10-30' }],
     licenses: [
@@ -874,45 +837,46 @@ export const orders: Order[] = reactive([
     ],
     log: [
       { at: '2026-09-25T15:00:00+08:00', by: '蔡宗翰', track: '財務', text: '第 1 期「到貨後 50%」收款 540,000' },
-      { at: '2026-09-05T14:30:00+08:00', by: '黃彥霖', track: '執行', text: '出貨單 S-2026-0905-001 建立，進入「全部出貨」階段' },
+      { at: '2026-09-05T14:30:00+08:00', by: '黃彥霖', track: '執行', text: '出貨單 S-2026-0905-001 建立' },
       { at: '2026-08-22T10:10:00+08:00', by: '蔡宗翰', track: '財務', text: '第 1 期「到貨後 50%」開立發票 AB-10234567' },
       { at: '2026-08-20T09:40:00+08:00', by: '陳冠宇', track: '財務', text: '第 1 期「到貨後 50%」申請請款' },
-      { at: '2026-07-18T16:00:00+08:00', by: '黃彥霖', track: '執行', text: 'PO 2026-07-12-001 到貨入庫，批次 B-2026-0718-01，進入「已入庫」階段' },
-      { at: '2026-07-12T11:30:00+08:00', by: '劉欣怡', track: '執行', text: 'PO 2026-07-12-001 核准，進入「已下單」階段' },
-      { at: '2026-07-12T09:30:00+08:00', by: '劉欣怡', track: '執行', text: '核准通過 SO 成立，進入「接單」階段' },
+      { at: '2026-07-18T16:00:00+08:00', by: '黃彥霖', track: '執行', text: 'PO 2026-07-12-001 到貨入庫，批次 B-2026-0718-01' },
+      { at: '2026-07-12T11:30:00+08:00', by: '劉欣怡', track: '執行', text: 'PO 2026-07-12-001 核准' },
+      { at: '2026-07-12T09:30:00+08:00', by: '劉欣怡', track: '執行', text: '核准通過 SO 成立' },
     ],
   },
   {
     id: 'o4', soNo: 'SO-2026-0515-001', dealId: 'd11', dealNo: 'D-2026-0410-004', customer: '立德大學', product: 'Sophos Central 教育授權 800 端點',
-    owner: '林雅婷', amount: 480_000, cost: 420_000, actualCost: 420_000, stageIndex: 6, quoteId: 'q11-1', engClosedAt: '2026-06-02',
+    owner: '林雅婷', amount: 480_000, cost: 420_000, actualCost: 420_000, quoteId: 'q11-1', engClosedAt: '2026-06-02', acceptedAt: '2026-06-02', acceptFile: '立德-驗收單.pdf', acceptedBy: '林雅婷',
     contractEndAt: '2027-05-26',
     milestones: [{ label: '一次請款', amount: 480_000, status: '已收款', planInvoiceAt: '2026-05-20', planPayAt: '2026-06-30', requestedAt: '2026-05-20', invoiceNo: 'AB-09876543', invoicedAt: '2026-05-22', paidAt: '2026-06-30' }],
     licenses: [{ id: 'lic-o4-1', kind: '授權', sku: 'SPH-SC-EDU-800', name: 'Sophos Central 教育授權 800 端點 1 年', qty: 1, start: '2026-05-26', months: 12, expires: '2027-05-26' }],
     log: [
       { at: '2026-06-30T14:00:00+08:00', by: '蔡宗翰', track: '財務', text: '第 1 期「一次請款」收款 480,000，訂單結案' },
-      { at: '2026-06-02T11:20:00+08:00', by: '林雅婷', track: '執行', text: '客戶簽收（紙本掃描上傳），進入「驗收」階段' },
-      { at: '2026-05-26T09:30:00+08:00', by: '黃彥霖', track: '執行', text: '出貨單 S-2026-0526-001 建立，進入「全部出貨」階段' },
+      { at: '2026-06-02T11:30:00+08:00', by: '林雅婷', track: '執行', text: '整案驗收（附客戶驗收單 立德-驗收單.pdf）' },
+      { at: '2026-06-02T11:20:00+08:00', by: '林雅婷', track: '執行', text: '出貨單 S-2026-0526-001 客戶簽收（紙本掃描上傳）' },
+      { at: '2026-05-26T09:30:00+08:00', by: '黃彥霖', track: '執行', text: '出貨單 S-2026-0526-001 建立' },
       { at: '2026-05-22T10:00:00+08:00', by: '蔡宗翰', track: '財務', text: '第 1 期「一次請款」開立發票 AB-09876543' },
       { at: '2026-05-20T15:10:00+08:00', by: '林雅婷', track: '財務', text: '第 1 期「一次請款」申請請款' },
-      { at: '2026-05-20T10:00:00+08:00', by: '黃彥霖', track: '執行', text: 'PO 2026-05-16-002 到貨入庫，批次 B-2026-0520-01，進入「已入庫」階段' },
-      { at: '2026-05-16T09:30:00+08:00', by: '劉欣怡', track: '執行', text: 'PO 2026-05-16-002 核准，進入「已下單」階段' },
-      { at: '2026-05-15T10:00:00+08:00', by: '劉欣怡', track: '執行', text: '核准通過 SO 成立，進入「接單」階段' },
+      { at: '2026-05-20T10:00:00+08:00', by: '黃彥霖', track: '執行', text: 'PO 2026-05-16-002 到貨入庫，批次 B-2026-0520-01' },
+      { at: '2026-05-16T09:30:00+08:00', by: '劉欣怡', track: '執行', text: 'PO 2026-05-16-002 核准' },
+      { at: '2026-05-15T10:00:00+08:00', by: '劉欣怡', track: '執行', text: '核准通過 SO 成立' },
     ],
   },
   {
     id: 'o5', soNo: 'SO-2026-1001-013', dealId: 'd2', dealNo: 'D-2026-0922-001', customer: '北辰物流', product: 'Palo Alto PA-440 x2 + Threat Prevention',
-    owner: '陳冠宇', amount: 880_000, cost: 862_400, stageIndex: 0, quoteId: 'q2-1', changeQuoteId: 'q2-2',
+    owner: '陳冠宇', amount: 880_000, cost: 862_400, quoteId: 'q2-1', changeQuoteId: 'q2-2',
     milestones: [{ label: '驗收後一次請款', amount: 880_000, status: '待請款', planInvoiceAt: '2026-12-15', planPayAt: '2027-01-14' }],
     licenses: [],
     log: [
       { at: '2026-10-07T09:30:00+08:00', by: '陳冠宇', track: '合約', text: '開始合約變更，自 v1 複製為 v2 草稿' },
-      { at: '2026-10-01T10:00:00+08:00', by: '劉欣怡', track: '執行', text: '核准通過 SO 成立，進入「接單」階段' },
+      { at: '2026-10-01T10:00:00+08:00', by: '劉欣怡', track: '執行', text: '核准通過 SO 成立' },
     ],
   },
   {
     id: 'o6', soNo: 'PRE-2026-1010-001', guaranteeNo: 'PRE-2026-1010-001', phase: '保證單', guaranteeReason: '預下單',
     dealId: 'd8', dealNo: 'D-2026-0930-006', customer: '北辰物流', product: 'FortiGate 100F x6 SD-WAN',
-    owner: '林雅婷', amount: 1_150_000, cost: 1_023_000, stageIndex: 0, quoteId: 'q8-1',
+    owner: '林雅婷', amount: 1_150_000, cost: 1_023_000, quoteId: 'q8-1',
     milestones: [{ label: '驗收後一次請款', amount: 1_150_000, status: '待請款', planInvoiceAt: '2026-12-20', planPayAt: '2027-01-19' }],
     licenses: [],
     log: [{ at: '2026-10-10T10:00:00+08:00', by: '林雅婷', track: '合約', text: '客戶回簽 v1，因「預下單」轉保證單 PRE-2026-1010-001：原廠交期長，先向原廠下單鎖貨' }],
@@ -920,7 +884,7 @@ export const orders: Order[] = reactive([
   {
     id: 'o7', soNo: 'PRE-2026-1022-002', guaranteeNo: 'PRE-2026-1022-002', phase: '保證單', guaranteeReason: '議價中',
     dealId: 'd13', dealNo: 'D-2026-1015-003', customer: '國昌建設', product: '工地監控網段 FortiGate 60F x4',
-    owner: '陳冠宇', amount: 210_000, cost: 174_000, stageIndex: 0, quoteId: 'q13-1',
+    owner: '陳冠宇', amount: 210_000, cost: 174_000, quoteId: 'q13-1',
     milestones: [{ label: '驗收後一次請款', amount: 210_000, status: '待請款', planInvoiceAt: '2026-11-30', planPayAt: '2026-12-30' }],
     licenses: [],
     log: [{ at: '2026-10-22T16:00:00+08:00', by: '陳冠宇', track: '合約', text: '客戶回簽 v1，因「議價中」轉保證單 PRE-2026-1022-002：客戶回簽後要求 60F 單價再降' }],
@@ -928,7 +892,7 @@ export const orders: Order[] = reactive([
   {
     id: 'o8', soNo: 'PRE-2026-1025-003', guaranteeNo: 'PRE-2026-1025-003', phase: '保證單', guaranteeReason: '尚無正式合約',
     dealId: 'd14', dealNo: 'D-2026-1012-005', customer: '立德大學', product: 'Sophos XGS 4500 校園防火牆汰換',
-    owner: '林雅婷', amount: 1_600_000, cost: 1_358_000, stageIndex: 0, quoteId: 'q14-1',
+    owner: '林雅婷', amount: 1_600_000, cost: 1_358_000, quoteId: 'q14-1',
     milestones: [{ label: '驗收後一次請款', amount: 1_600_000, status: '待請款', planInvoiceAt: '2027-01-15', planPayAt: '2027-03-15' }],
     licenses: [],
     log: [{ at: '2026-10-25T11:00:00+08:00', by: '林雅婷', track: '合約', text: '客戶回簽 v1，因「尚無正式合約」轉保證單 PRE-2026-1025-003：計算機中心先回簽，正式訂單由總務處開標後下單' }],
@@ -1100,6 +1064,7 @@ export interface Todo {
 export const todos: Todo[] = [
   { id: 't-eng-d4-1', kind: '派工', title: '【急件】待派工 T01｜POC｜立德大學 EDR 試用部署', refNo: 'D-2026-0928-002', due: '2026-10-14', forRoles: ['工程主管'], dealId: 'd4', engRequestId: 'er-002-T01', route: '/sales/pipeline?deal=d4', createdAt: '2026-10-06T14:00:00+08:00' },
   { id: 't-eng-d4-2', kind: '派工', title: '待派工（網路資安組）T02｜現場勘查｜立德大學 校園網路與 AD 確認', refNo: 'D-2026-0928-002', due: '2026-10-12', forRoles: ['工程師'], forUserIds: ['u-eng-lee'], dealId: 'd4', engRequestId: 'er-002-T02', route: '/sales/pipeline?deal=d4', createdAt: '2026-10-07T09:30:00+08:00' },
+  { id: 't-eng-d2-1', kind: '派工', title: '待派工 T01｜部署｜北辰物流 安裝建置與政策移轉', refNo: 'D-2026-0922-001', due: '2026-11-28', forRoles: ['工程主管'], dealId: 'd2', engRequestId: 'er-d2-T01', route: '/engineering/services?deal=d2', createdAt: '2026-10-01T10:00:00+08:00' },
   { id: 't-eng-d1-3', kind: '工程', title: '工程支援 T03｜部署｜崇光醫療 總院 HA 部署', refNo: 'D-2026-0914-003', due: '2026-11-05', forRoles: ['工程師'], forUserIds: ['u-eng-lee'], dealId: 'd1', engRequestId: 'er-003-T03', route: '/sales/pipeline?deal=d1', createdAt: '2026-09-22T09:30:00+08:00' },
   { id: 't-eng-d8-2', kind: '工程', title: '工程支援 T02｜部署｜北辰物流 六分點 SD-WAN 安裝', refNo: 'D-2026-0930-006', due: '2026-11-20', forRoles: ['工程師'], forUserIds: ['u-eng-lee'], dealId: 'd8', engRequestId: 'er-006-T02', route: '/sales/pipeline?deal=d8', createdAt: '2026-10-03T10:00:00+08:00' },
   { id: 't-eng-d8-3', kind: '工程', title: '待接受 T03｜售前諮詢｜北辰物流 第三分點 VPN 走法', refNo: 'D-2026-0930-006', due: '2026-10-15', forRoles: ['工程師'], forUserIds: ['u-eng-wu'], dealId: 'd8', engRequestId: 'er-006-T03', route: '/sales/pipeline?deal=d8', createdAt: '2026-10-05T11:00:00+08:00' },
@@ -1147,8 +1112,16 @@ export interface PoLine {
   vendorSku: string
   qty: number
   unitCost: number
-  /** 已到貨數量 */
+  /** 路線：進公司倉（入庫後出貨單出貨）或直送客戶（不入庫，登記送達即算到客戶）；沒填視為公司倉 */
+  route?: '公司倉' | '直送'
+  /** 來源：訂單（報價）的內部項次號碼；同料號出現在多個項次時，進度歸給這一個 */
+  srcLineNo?: number
+  /** 已到貨數量（公司倉） */
   received?: number
+  /** 直送已送達客戶的數量、日期與送達證明 */
+  delivered?: number
+  deliveredAt?: string
+  deliveryProof?: string
   /** 到貨時分給哪張 SO 或公司庫存 */
   allocations?: { target: string; qty: number; at: string }[]
 }
@@ -1191,7 +1164,7 @@ export const purchaseOrders: PurchaseOrder[] = reactive([
   {
     id: 'po2', poNo: '2026-10-01-003', vendor: '原廠台灣總代理 A', soNo: 'SO-2026-0929-012', customer: '台灣聯合租賃', dealId: 'd7', orderId: 'o1',
     amount: 548_000, terms: 'T/T 30 天', status: '已下單', createdAt: '2026-10-01', expectedAt: '2026-10-24', signbackFile: 'A-PO-2026-10-01-003-簽回.pdf',
-    lines: [{ no: 1, extName: 'Sophos XGS 2100 續約授權 2 年', intSku: 'SPH-XGS2100-RNW-24', vendorSku: 'XGS2100-RNW-24', qty: 1, unitCost: 548_000 }],
+    lines: [{ no: 1, extName: 'Sophos XGS 2100 續約授權 2 年', intSku: 'SPH-XGS2100-RNW-24', vendorSku: 'XGS2100-RNW-24', qty: 1, unitCost: 548_000, route: '直送' }],
   },
   {
     id: 'po3', poNo: '2026-09-12-004', vendor: '原廠台灣總代理 A', soNo: '預下單 D-2026-0930-006', customer: '北辰物流', dealId: 'd8',
@@ -1312,7 +1285,6 @@ export interface Shipment {
   customer: string
   at: string
   by: string
-  direct?: boolean
   note?: string
   lines: { sku: string; name: string; qty: number; batch: string; unitCost: number; expires?: string }[]
   status: '已出貨' | '已簽收'
@@ -1386,7 +1358,7 @@ export const announcements: Announcement[] = [
   { id: 'an3', title: '10/10 國慶日休假，客服值班表', body: '當天由北區業務輪值接客戶電話，值班表見內文。', author: '劉欣怡', at: '2026-09-30T17:00:00+08:00' },
 ]
 
-export type AttachmentType = '客戶回簽' | '廠商報價單' | '廠商簽回' | '出貨簽收' | '報價單 PDF' | '行政申請' | '供應商文件' | '其他'
+export type AttachmentType = '客戶回簽' | '廠商報價單' | '廠商簽回' | '出貨簽收' | '驗收單' | '報價單 PDF' | '行政申請' | '供應商文件' | '其他'
 
 export interface Attachment {
   id: string
@@ -1412,6 +1384,7 @@ export const attachments: Attachment[] = [
   { id: 'f5', type: '客戶回簽', refNo: 'D-2026-0820-001', party: '台灣聯合租賃', fileName: '台灣聯合租賃-回簽-v1.pdf', uploader: '林雅婷', at: '2026-09-28T17:10:00+08:00', sizeKb: 2210, scan: '通過', hash: 'a8c0…4e61' },
   { id: 'f6', type: '廠商簽回', refNo: '2026-10-01-003', party: '原廠台灣總代理 A', fileName: 'PO-2026-10-01-003-signed.pdf', uploader: '黃彥霖', at: '2026-10-07T16:30:00+08:00', sizeKb: 520, scan: '通過', hash: '3d4f…92c8' },
   { id: 'f8', type: '出貨簽收', refNo: 'SO-2026-0515-001', party: '立德大學', fileName: '立德-簽收單掃描.pdf', uploader: '林雅婷', at: '2026-06-02T14:00:00+08:00', sizeKb: 880, scan: '通過', hash: 'c9a3…15d0' },
+  { id: 'f8b', type: '驗收單', refNo: 'SO-2026-0515-001', party: '立德大學', fileName: '立德-驗收單.pdf', uploader: '林雅婷', at: '2026-06-02T14:05:00+08:00', sizeKb: 640, scan: '通過', hash: 'a71e…02c4' },
   { id: 'f9', type: '其他', refNo: 'D-2026-0928-002', party: '立德大學', fileName: 'EDR-POC-計畫書.docx', uploader: '陳冠宇', at: '2026-10-07T18:05:00+08:00', sizeKb: 310, scan: '通過', hash: '0b6e…3a9c' },
   { id: 'f11', type: '客戶回簽', refNo: 'D-2026-0922-001', party: '北辰物流', fileName: '北辰物流-回簽-v1.pdf', uploader: '陳冠宇', at: '2026-09-26T16:40:00+08:00', sizeKb: 1180, scan: '通過', hash: '7a2e…c0b1' },
   { id: 'f12', type: '客戶回簽', refNo: 'D-2026-0620-002', party: '國昌建設', fileName: '國昌建設-回簽-v1.pdf', uploader: '陳冠宇', at: '2026-07-09T15:20:00+08:00', sizeKb: 1260, scan: '通過', hash: '2c9d…41f8' },

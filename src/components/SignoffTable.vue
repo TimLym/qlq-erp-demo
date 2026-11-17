@@ -34,7 +34,7 @@ function onSigned(orderId: string, method: string, file: string) {
       <thead><tr><th>類型</th><th>單號</th><th>客戶／廠商</th><th>日期</th><th>已等待</th><th>負責業務</th><th></th></tr></thead>
       <tbody>
         <tr v-for="{ s, days } in list" :key="s.id">
-          <td><span class="tag teal">{{ s.direct ? '原廠直送簽收' : '出貨簽收' }}</span></td>
+          <td><span class="tag teal">出貨簽收</span></td>
           <td class="id">{{ s.shipNo }}</td>
           <td><b>{{ s.customer }}</b><div class="muted small">{{ s.soNo }}</div></td>
           <td class="id">{{ s.at }}</td>

@@ -4,28 +4,32 @@ import { ElMessage } from 'element-plus'
 import { useAppStore } from '../../stores/app'
 import { useJump } from '../../composables/useJump'
 import { orders, quotes, stock, purchaseOrders, type StockItem } from '../../mock/data'
+import { warehouseShortOf } from '../../utils/execProgress'
 import { money } from '../../utils/format'
 
-/* 等貨中的訂單：接單到已入庫，逐料號列需要量、已保留、在途（PO 已下單未到）、缺量 */
+/* 等貨中的訂單：還沒驗收的訂單，逐料號列需要量、已保留、在途（PO 已下單未到）、缺量 */
 const store = useAppStore()
 const { goSo } = useJump()
 const waiting = computed(() =>
   orders
-    .filter((o) => o.stageIndex <= 3)
+    .filter((o) => !o.acceptedAt && !o.voidedAt)
     .map((o) => {
       const q = quotes.find((x) => x.id === o.quoteId)
       const items = (q?.lines ?? [])
         .filter((l) => l.vendor !== '自有工程')
         .map((l) => {
           const held = stock.filter((s) => s.sku === l.intSku && s.reservedFor === o.soNo).reduce((s, x) => s + x.reserved, 0)
+          const short = warehouseShortOf(o, l.intSku)
           const inTransit = purchaseOrders
             .filter((p) => p.soNo === o.soNo && p.status === '已下單')
-            .flatMap((p) => p.lines.filter((x) => x.intSku === l.intSku).map((x) => x.qty - (x.received ?? 0)))
+            .flatMap((p) => p.lines.filter((x) => x.intSku === l.intSku && x.route !== '直送').map((x) => x.qty - (x.received ?? 0)))
             .reduce((s, n) => s + n, 0)
-          return { sku: l.intSku, name: l.extName, need: l.qty, held, inTransit, short: Math.max(0, l.qty - held) }
+          return { sku: l.intSku, name: l.extName, need: l.qty, held, inTransit, short }
         })
       return { order: o, items, ready: items.every((i) => i.short === 0) }
-    }),
+    })
+    /* 只列還要進公司倉的訂單 */
+    .filter((w) => w.items.some((i) => i.short > 0 || i.held > 0)),
 )
 
 /* 可分配的批次：還有未保留數量的庫存 */
@@ -66,10 +70,8 @@ function assign() {
     stock.push({ ...s, batch: `${s.batch}-${t.value.slice(-3)}`, qty: qty.value, reserved: qty.value, reservedFor: t.value })
   }
   const w = waiting.value.find((x) => x.order.soNo === t.value)
-  const ready = !!w && w.ready && w.order.stageIndex < 3
-  if (ready) w.order.stageIndex = 3
-  if (w) store.logOrder(w.order, '執行', `保留批次 ${s.batch} ${qty.value} 台${ready ? '，料齊，進入「已入庫」階段' : ''}`)
-  ElMessage.success(`已保留 ${qty.value} 台給 ${t.value}${w?.ready ? '，料齊，訂單進到「已入庫」' : ''}`)
+  if (w) store.logOrder(w.order, '執行', `保留批次 ${s.batch} ${qty.value} 台${w.ready ? '，料齊' : ''}`)
+  ElMessage.success(`已保留 ${qty.value} 台給 ${t.value}${w?.ready ? '，料齊可出貨' : ''}`)
   assigning.value = null
 }
 function release(s: StockItem) {
@@ -77,9 +79,8 @@ function release(s: StockItem) {
   s.reserved = 0
   s.reservedFor = undefined
   const o = orders.find((x) => x.soNo === so)
-  if (o && o.stageIndex === 3) o.stageIndex = 2
-  if (o) store.logOrder(o, '執行', `釋放批次 ${s.batch} 回公司庫存${o.stageIndex === 2 ? '，回到「進貨」' : ''}`)
-  ElMessage.info(`${s.batch} 已釋放回公司庫存${so ? `，${so} 回到「進貨」` : ''}`)
+  if (o) store.logOrder(o, '執行', `釋放批次 ${s.batch} 回公司庫存`)
+  ElMessage.info(`${s.batch} 已釋放回公司庫存`)
 }
 </script>
 

@@ -26,7 +26,7 @@ const signerTitle = ref('')
 const uploading = ref(false)
 
 const receipts = computed(() => (props.order ? store.attachments.filter((a) => a.type === '出貨簽收' && a.refNo === props.order!.soNo) : []))
-const alreadySigned = computed(() => !!props.order && props.order.stageIndex >= 6)
+const alreadySigned = computed(() => !!props.order && !pending.value.length && signedOnes.value.length > 0)
 /* 這次要簽的：這張 SO 還沒簽收的出貨單；已簽收或還沒出貨就沒有簽收方式可選 */
 const pending = computed(() => (props.order ? shipments.filter((s) => s.orderId === props.order!.id && s.status === '已出貨') : []))
 const signedOnes = computed(() => (props.order ? shipments.filter((s) => s.orderId === props.order!.id && s.status === '已簽收') : []))
