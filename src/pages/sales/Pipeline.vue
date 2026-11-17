@@ -351,7 +351,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="page pipeline">
+  <div class="page pipeline" :class="{ 'fill-page': view === 'list' }">
     <div class="page-head">
       <div>
         <h1>潛在商機（Pipeline）</h1>
@@ -674,9 +674,38 @@ onMounted(() => {
   flex-direction: column;
 }
 
+/* 列表模式表格填滿到頁面底部；視窗太矮時改回整頁捲動，表格固定高度 */
+.fill-page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--topbar-h));
+  padding-bottom: 16px;
+}
+
+.fill-page > * {
+  flex: none;
+}
+
 .grid {
   height: calc(100vh - var(--topbar-h) - 190px);
-  min-height: 360px;
+  min-height: 320px;
+}
+
+.fill-page > .grid {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
+@media (max-height: 640px) {
+  .fill-page {
+    height: auto;
+  }
+
+  .fill-page > .grid {
+    flex: none;
+    height: 420px;
+  }
 }
 
 .grid :deep(.idle-cell) {

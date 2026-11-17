@@ -656,3 +656,58 @@ body.rail-collapsed .deal-drawer-mask {
   background: rgba(255, 255, 255, 0.22);
   color: #fff;
 }
+
+/* 欄位標題的勾選篩選（AG Grid 自訂篩選彈窗，掛在表格外，樣式放全域） */
+.check-filter {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  min-width: 190px;
+  font-size: 13px;
+}
+
+.check-filter .cf-head {
+  margin: 0 6px 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.check-filter .cf-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.check-filter .cf-opt:hover {
+  background: var(--paper);
+}
+
+.check-filter .cf-opt span {
+  flex: 1;
+}
+
+.check-filter .cf-opt i {
+  font-style: normal;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.check-filter .cf-clear {
+  justify-self: end;
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 4px;
+  padding: 2px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.check-filter .cf-clear:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
