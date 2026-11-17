@@ -457,12 +457,14 @@ button {
 }
 
 /* 右上角帳號選單（el-dropdown 會掛到 body，樣式放全域） */
-.account-menu .persona-item .muted {
+.account-menu .persona-item .muted,
+.account-menu .role-item .muted {
   margin-left: 8px;
   font-size: 12px;
 }
 
-.account-menu .persona-item.on {
+.account-menu .persona-item.on,
+.account-menu .role-item.on {
   color: var(--teal);
   font-weight: 600;
 }

@@ -12,7 +12,7 @@ const store = useAppStore()
 const router = useRouter()
 const q = ref('')
 const type = ref<'' | '終端客戶' | '中間商'>('')
-const canEdit = computed(() => ['業務', '業務主管', '執行長', '系統管理員'].includes(store.role))
+const canEdit = computed(() => ['業務', '業務主管', '執行長', '系統管理員'].includes(store.role) && store.can('/sales/customers', 'edit'))
 
 const activeDeals = (c: Customer) => deals.filter((d) => d.customer === c.name && d.stage !== '未成交' && d.stage !== 'SO已成立')
 /* 正式訂單：保證單（含作廢）不算 */
@@ -113,7 +113,10 @@ function createCustomer() {
 
 const customerDeals = computed(() => (current.value ? deals.filter((d) => d.customer === current.value!.name) : []))
 const customerOrders = computed(() => (current.value ? orders.filter((o) => o.customer === current.value!.name && !isGuarantee(o)) : []))
+const canDealPage = computed(() => store.can('/sales/pipeline'))
+const canNewDeal = computed(() => store.can('/sales/pipeline', 'edit'))
 function goDeal(id: string) {
+  if (!canDealPage.value) return
   openId.value = null
   router.push({ path: '/sales/pipeline', query: { deal: id } })
 }
@@ -170,7 +173,7 @@ function newDealFor(c: Customer) {
             <p class="muted">{{ current.depts.length }} 個部門 · 進行中商機 {{ activeDeals(current).length }} · 訂單 {{ orderCount(current) }}</p>
           </div>
           <div class="head-actions">
-            <el-button v-if="canEdit && current.status === '正常'" type="primary" @click="newDealFor(current)">新增商機</el-button>
+            <el-button v-if="canEdit && canNewDeal && current.status === '正常'" type="primary" @click="newDealFor(current)">新增商機</el-button>
             <el-button @click="openId = null">關閉</el-button>
           </div>
         </header>
@@ -261,7 +264,7 @@ function newDealFor(c: Customer) {
               <table class="plain-table">
                 <thead><tr><th>編號</th><th>部門</th><th>需求</th><th>階段</th><th class="num">金額</th><th>業務</th></tr></thead>
                 <tbody>
-                  <tr v-for="d in customerDeals" :key="d.id" class="row" @click="goDeal(d.id)">
+                  <tr v-for="d in customerDeals" :key="d.id" :class="{ row: canDealPage }" @click="goDeal(d.id)">
                     <td class="id">{{ d.dealNo }}</td><td>{{ d.customerDept }}</td><td>{{ d.product }}</td><td><span class="tag" :class="d.stage === 'SO已成立' ? 'olive' : d.stage === '未成交' ? 'red' : 'teal'">{{ d.stage }}</span></td><td class="num">{{ money(d.amount) }}</td><td>{{ d.owner }}</td>
                   </tr>
                   <tr v-if="!customerDeals.length"><td colspan="6" class="muted">還沒有商機</td></tr>

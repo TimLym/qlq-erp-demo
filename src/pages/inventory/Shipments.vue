@@ -21,7 +21,7 @@ const list = computed(() => {
 const detail = ref<Shipment | null>(null)
 const route = useRoute()
 const router = useRouter()
-const { goSo } = useJump()
+const { goSo, canSo } = useJump()
 onMounted(() => {
   const ship = route.query.ship as string | undefined
   if (!ship) return
@@ -46,7 +46,7 @@ onMounted(() => {
         <tbody>
           <tr v-for="s in list" :key="s.id" class="row" @click="detail = s">
             <td class="id">{{ s.shipNo }}</td>
-            <td><b>{{ s.customer }}</b><div class="muted small"><a class="link" @click.stop="goSo(s.soNo)">{{ s.soNo }}</a></div></td>
+            <td><b>{{ s.customer }}</b><div class="muted small"><a v-if="canSo" class="link" @click.stop="goSo(s.soNo)">{{ s.soNo }}</a><template v-else>{{ s.soNo }}</template></div></td>
             <td>{{ s.lines.map((l) => `${l.name} × ${l.qty}`).join('、') }}</td>
             <td class="id">{{ s.at }}</td>
           </tr>

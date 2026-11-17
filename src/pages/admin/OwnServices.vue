@@ -7,7 +7,7 @@ import { money } from '../../utils/format'
 
 /** 自有服務項目：報價勾「自有工程」時只能從這裡選，成本帶標準成本，業務不能改（1112 會議 #10） */
 const store = useAppStore()
-const canEdit = computed(() => ['執行長', '系統管理員'].includes(store.role))
+const canEdit = computed(() => ['執行長', '系統管理員'].includes(store.role) && store.can('/admin/own-services', 'edit'))
 const inUse = (code: string) => quotes.some((q) => q.lines.some((l) => l.vendor === '自有工程' && l.intSku === code))
 const blank = () => ({ code: '', name: '', unit: '式', cost: 0 })
 const form = ref(blank())

@@ -7,7 +7,7 @@ import { useJump } from '../composables/useJump'
 /** 出貨單明細抽屜：從 SO 抽屜的簽收表、流程紀錄或出貨單列表點單號打開，不跳頁 */
 const props = defineProps<{ shipment: Shipment | null }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
-const { goSo } = useJump()
+const { goSo, canSo } = useJump()
 const preview = ref(false)
 function jumpSo(soNo: string) {
   emit('close')
@@ -31,7 +31,7 @@ const open = computed({
             <span class="tag" :class="shipment.status === '已簽收' ? 'olive' : 'amber'">{{ shipment.status === '已簽收' ? '已簽收' : '待簽收' }}</span>
             <span v-if="shipment.direct" class="tag slate">原廠直送</span>
           </div>
-          <h2>{{ shipment.customer }}<span class="dept"><a class="link" @click="jumpSo(shipment.soNo)">{{ shipment.soNo }}</a></span></h2>
+          <h2>{{ shipment.customer }}<span class="dept"><a v-if="canSo" class="link" @click="jumpSo(shipment.soNo)">{{ shipment.soNo }}</a><template v-else>{{ shipment.soNo }}</template></span></h2>
           <p class="muted">出貨 {{ shipment.at }} · {{ shipment.by }}</p>
         </div>
         <el-button @click="emit('close')">關閉</el-button>

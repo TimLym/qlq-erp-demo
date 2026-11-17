@@ -107,14 +107,14 @@ const amtCell = (key: 'uninvoiced' | 'invoicedUnpaid' | 'paid') => (p: { data?: 
 }
 const amtValue = (key: 'uninvoiced' | 'invoicedUnpaid' | 'paid') => (p: { data?: Order }) => (p.data && !isGuarantee(p.data) ? billingOf(p.data)[key] : -1)
 /* 通知開票：負責業務、業務主管、執行長；有未開票的期數才出現 */
-const canBill = (o: Order) => !isGuarantee(o) && o.milestones.some((m) => m.status === '待請款') && (['業務主管', '執行長'].includes(store.role) || (store.role === '業務' && o.owner === store.currentUser.name))
+const canBill = (o: Order) => store.can('/sales/orders', 'edit') && !isGuarantee(o) && o.milestones.some((m) => m.status === '待請款') && (['業務主管', '執行長'].includes(store.role) || (store.role === '業務' && o.owner === store.currentUser.name))
 const billCell = (p: { data?: Order }) => (p.data && canBill(p.data) ? '<button type="button" class="bill-btn" data-bill="1">通知開票</button>' : '')
 const isRenewal = (o: Order) => !!deals.find((d) => d.id === o.dealId)?.renewalOfDealId
 const marginOf = (o: Order) => (o.amount ? (o.amount - o.cost) / o.amount : 0)
 const marginTip = (o: Order) => (salesOnly.value ? '' : `業務毛利率 ${pct(marginOf(o))}；公司毛利率 ${o.actualCost === undefined ? '—（PO 核准後寫回）' : pct((o.amount - o.actualCost) / o.amount)}${o.actualCost !== undefined && o.actualCost !== o.cost ? `；成本差異 ${o.actualCost > o.cost ? '+' : '−'}${money(Math.abs(o.actualCost - o.cost))}` : ''}`)
 
 const allColumnDefs = (): ColDef<Order>[] => [
-  { field: 'soNo', headerName: 'SO 編號', width: 172, pinned: 'left', cellClass: 'num', cellRenderer: (p: { data?: Order; value: string }) => (p.data ? `${p.value}<div class="sub"><a class="link" data-deal="${p.data.dealNo}">${p.data.dealNo}</a></div>` : '') },
+  { field: 'soNo', headerName: 'SO 編號', width: 172, pinned: 'left', cellClass: 'num', cellRenderer: (p: { data?: Order; value: string }) => (p.data ? `${p.value}<div class="sub">${store.can('/sales/pipeline') ? `<a class="link" data-deal="${p.data.dealNo}">${p.data.dealNo}</a>` : p.data.dealNo}</div>` : '') },
   { field: 'customer', headerName: '客戶 / 內容', flex: 1, minWidth: 300, cellRenderer: (p: { data?: Order; value: string }) => (p.data ? `<b>${esc(p.value)}</b>${isRenewal(p.data) ? ' <span class="tag slate mini">續約</span>' : ''}<div class="sub ellipsis" title="${esc(p.data.product)}">${esc(p.data.product)}</div>` : '') },
   { field: 'owner', headerName: '業務', width: 104 },
   { field: 'amount', headerName: '訂單金額', hide: true, width: 136, type: 'rightAligned', valueFormatter: (p) => money(p.value), cellClass: 'num' },

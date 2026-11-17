@@ -126,7 +126,7 @@ function release(s: StockItem) {
               <td class="id">{{ s.receivedAt }}</td>
               <td class="num">{{ s.qty - s.reserved }}</td>
               <td class="num">{{ money(s.unitCost) }}</td>
-              <td><el-button size="small" @click="startAssign(s)">分配給 SO</el-button></td>
+              <td><el-button v-if="store.can('/purchase/allocate', 'edit')" size="small" @click="startAssign(s)">分配給 SO</el-button></td>
             </tr>
             <tr v-if="!free.length"><td colspan="6" class="muted">沒有可分配的庫存</td></tr>
           </tbody>
@@ -142,7 +142,7 @@ function release(s: StockItem) {
               <td class="id">{{ s.batch }}</td>
               <td class="num">{{ s.reserved }}</td>
               <td class="id">{{ s.reservedFor }}</td>
-              <td><el-button size="small" text @click="release(s)">釋放回庫存</el-button></td>
+              <td><el-button v-if="store.can('/purchase/allocate', 'edit')" size="small" text @click="release(s)">釋放回庫存</el-button></td>
             </tr>
             <tr v-if="!held.length"><td colspan="5" class="muted">目前沒有保留中的批次</td></tr>
           </tbody>

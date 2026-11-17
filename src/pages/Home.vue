@@ -89,7 +89,10 @@ const overdue = computed(() =>
     ? store.scopedOrders.filter((o) => !isGuarantee(o) && store.canSeeOrderMoney(o)).flatMap((o) => overduePay(o, TODAY.toISOString().slice(0, 10)).map((m) => ({ o, m }))).sort((a, b) => (a.m.planPayAt ?? '').localeCompare(b.m.planPayAt ?? ''))
     : [],
 )
-const inbox = computed<{ key: string; label: string; n: number; to: string; preview: string; urgent?: boolean }[]>(() => {
+type InboxRow = { key: string; label: string; n: number; to: string; preview: string; urgent?: boolean }
+/* 收件匣只列目標頁有檢視權限的列，避免帶到「沒有權限」頁或先露出摘要 */
+const inbox = computed<InboxRow[]>(() => inboxAll.value.filter((r) => store.can(r.to)))
+const inboxAll = computed<InboxRow[]>(() => {
   const pending = store.pendingForMe
   const waiting = store.waitingOnOthers
   const ship = waitingShipments.value[0]

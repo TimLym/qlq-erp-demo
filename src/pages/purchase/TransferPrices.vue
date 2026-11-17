@@ -7,7 +7,7 @@ import { money, dateTime } from '../../utils/format'
 import { evaluate } from '../../mock/routing'
 
 const store = useAppStore()
-const canEdit = computed(() => store.role === '採購' || store.role === '執行長')
+const canEdit = computed(() => (store.role === '採購' || store.role === '採購主管' || store.role === '執行長') && store.can('/purchase/transfer-prices', 'edit'))
 
 /* 料號清單：庫存、報價單、PO 出現過的對內 SKU 聯集 */
 const rows = computed(() => {

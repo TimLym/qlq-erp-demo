@@ -1,4 +1,6 @@
 import { defineStore } from 'pinia'
+import { routing } from '../mock/routing'
+import { permMatrix, permLog, pageOf, isLocked, type PermLevel } from '../mock/permissions'
 import { computed, ref } from 'vue'
 import { applyTheme, readSavedTheme, type ThemeId } from '../theme'
 import {
@@ -103,7 +105,49 @@ export const useAppStore = defineStore('app', () => {
 
   const currentUserId = ref('u-lin')
   const currentUser = computed(() => users.find((u) => u.id === currentUserId.value)!)
-  const role = computed<Role>(() => currentUser.value.role)
+  /*
+   * 切換角色（代理）：代理人切到被代理的角色後，左欄、頁面權限、待簽單都照那個角色。
+   * 可切換的來源只有兩個：簽核進度設定節點上被指定的代理（該角色沒人），以及別人在個人設定指定自己為簽核代理人的期間。
+   */
+  const actingAs = ref<{ role: Role; forUserId?: string; source: '簽核代理' | '請假代理' } | null>(null)
+  const role = computed<Role>(() => actingAs.value?.role ?? currentUser.value.role)
+  const switchableRoles = computed(() => {
+    const me = currentUserId.value
+    const list: { role: Role; forUserId?: string; source: '簽核代理' | '請假代理'; label: string }[] = []
+    routing.docs.forEach((d) => d.nodes.forEach((n) => {
+      const r = n.role as Role | '直屬主管' | undefined
+      if (!r || r === '直屬主管' || n.assign?.proxyUserId !== me) return
+      if (users.some((u) => u.role === r) || list.some((x) => x.role === r && !x.forUserId)) return
+      list.push({ role: r, source: '簽核代理', label: `${r}（代理）` })
+    }))
+    const n = new Date()
+    const today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
+    users.filter((u) => u.id !== me).forEach((u) => {
+      const dg = readJson<Delegate>(`erp.delegate.${u.id}`, { enabled: false, userId: '', from: '', to: '' })
+      if (!dg.enabled || dg.userId !== me) return
+      if ((dg.from && today < dg.from) || (dg.to && today > dg.to)) return
+      list.push({ role: u.role, forUserId: u.id, source: '請假代理', label: `${u.role}（代理 ${u.name}）` })
+    })
+    return list
+  })
+  function switchRole(target: { role: Role; forUserId?: string; source: '簽核代理' | '請假代理' } | null) {
+    if (target && !switchableRoles.value.some((x) => x.role === target.role && x.forUserId === target.forUserId)) return
+    actingAs.value = target
+  }
+  /* 頁面權限：矩陣裡這一頁的等級；不在導覽裡的頁（通知中心、個人設定、外部頁）不受管 */
+  function can(path: string, level: PermLevel = 'view'): boolean {
+    const page = pageOf(path.split('?')[0]!)
+    if (!page || isLocked(role.value, page.path)) return true
+    const lv = permMatrix[role.value]?.[page.path] ?? 'none'
+    return level === 'view' ? lv !== 'none' : lv === 'edit'
+  }
+  function setPermission(r: Role, path: string, to: PermLevel) {
+    if (!['執行長', '系統管理員'].includes(role.value) || isLocked(r, path)) return
+    const from = permMatrix[r][path] ?? 'none'
+    if (from === to) return
+    permMatrix[r][path] = to
+    permLog.unshift({ at: new Date().toISOString(), by: currentUser.value.name, role: r, path, from, to })
+  }
 
   const todos = ref<Todo[]>(seedTodos.map((t) => ({ ...t })))
   const approvals = ref<Approval[]>(seedApprovals.map((a) => ({ ...a, history: [...a.history] })))
@@ -111,7 +155,14 @@ export const useAppStore = defineStore('app', () => {
 
   const myTodos = computed(() =>
     todos.value.filter((t) => {
-      if (t.forUserIds && t.forUserIds.length) return t.forUserIds.includes(currentUserId.value)
+      if (t.forUserIds && t.forUserIds.length) {
+        const mine = t.forUserIds.includes(currentUserId.value) || (!!actingAs.value?.forUserId && t.forUserIds.includes(actingAs.value.forUserId))
+        if (!mine) return false
+        /* 切換角色時只列給該角色的；本職時，給沒有人的角色（代理關卡）的代辦要切過去才出現 */
+        if (actingAs.value) return t.forRoles.includes(role.value)
+        const forEmptyRole = t.forRoles.some((r) => !users.some((u) => u.role === r))
+        return forEmptyRole ? t.forRoles.includes(role.value) : true
+      }
       return t.forRoles.includes(role.value)
     }),
   )
@@ -124,7 +175,10 @@ export const useAppStore = defineStore('app', () => {
     if (a.status !== '待簽核') return false
     const step = a.steps?.[a.currentStep]
     const cands = step?.candidateIds
-    const mine = step?.proxy ? !!cands?.includes(currentUserId.value) : a.route[a.currentStep] === role.value && (!cands || cands.includes(currentUserId.value))
+    const ids = [currentUserId.value, ...(actingAs.value?.forUserId ? [actingAs.value.forUserId] : [])]
+    const mine = step?.proxy
+      ? !!cands?.includes(currentUserId.value) && role.value === step.role
+      : a.route[a.currentStep] === role.value && (!cands || cands.some((c) => ids.includes(c)))
     if (!mine) return false
     /* 簽過別一關的人不能再簽；同一關被駁回回來可以重簽 */
     const me = currentUser.value
@@ -690,6 +744,7 @@ export const useAppStore = defineStore('app', () => {
   )
 
   function switchUser(id: string) {
+    actingAs.value = null
     currentUserId.value = id
     remindDays.value = readJson(`erp.remind.${id}`, {})
     favorites.value = readJson(`erp.fav.${id}`, [])
@@ -713,6 +768,10 @@ export const useAppStore = defineStore('app', () => {
     return '訂單與財務'
   }
   function notifyLink(n: Notification): string {
+    const to = notifyTarget(n)
+    return can(to) ? to : '/notifications'
+  }
+  function notifyTarget(n: Notification): string {
     if (n.approvalId) return `/approvals/mine?open=${n.approvalId}`
     const c = notifyCat(n)
     return c === '簽核' ? '/approvals/mine' : c === '訂單與財務' ? '/sales/orders' : c === '工程' ? '/sales/pipeline' : '/notifications'
@@ -726,7 +785,7 @@ export const useAppStore = defineStore('app', () => {
       ...myNotifications.value.filter((n) => n.kind === '退回' && !n.read).map((n) => ({ key: `n-${n.id}`, label: '被退回', text: n.text, tone: 'red' as const, to: notifyLink(n) })),
       ...unreadMentionDeals.value.map((d) => ({ key: `m-${d.id}-${unreadMentions(d.id).length}`, label: '被提及', text: `${d.customer} ${d.customerDept}：${unreadMentions(d.id).length} 則留言提到你`, tone: 'teal' as const, to: `/sales/pipeline?deal=${d.id}` })),
     ]
-    return list.filter((x) => !gone.includes(x.key))
+    return list.filter((x) => !gone.includes(x.key)).map((x) => (can(x.to) ? x : { ...x, to: '/notifications' }))
   })
   function dismissImportant(key: string) {
     dismissed.value = { ...dismissed.value, [currentUserId.value]: [...(dismissed.value[currentUserId.value] ?? []), key] }
@@ -1207,6 +1266,11 @@ export const useAppStore = defineStore('app', () => {
     canSeeMoney,
     canSeeOrderMoney,
     canActOn,
+    actingAs,
+    switchableRoles,
+    switchRole,
+    can,
+    setPermission,
     notifyCat,
     notifyLink,
     importantItems,

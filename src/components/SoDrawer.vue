@@ -43,7 +43,10 @@ const o = computed(() => orders.find((x) => x.id === props.orderId))
  */
 type Tab = 'lines' | 'finance' | 'delivery' | 'eng' | 'comments' | 'records'
 const tab = ref<Tab>('lines')
-const isFinance = computed(() => ['會計', '財務主管', '執行長'].includes(store.role))
+/* 頁面權限：銷售訂單只有「檢視」時，商務、財務動作都不開；工程動作（起算、結案）仍依派工關係 */
+const canOperatePage = computed(() => store.can('/sales/orders', 'edit'))
+const canShipPage = computed(() => store.can('/inventory/shipments', 'edit'))
+const isFinance = computed(() => canOperatePage.value && ['會計', '財務主管', '執行長'].includes(store.role))
 const seeMoney = computed(() => !!o.value && store.canSeeOrderMoney(o.value))
 const showTab = computed<Record<Tab, boolean>>(() => {
   const r = store.role
@@ -59,6 +62,10 @@ const showTab = computed<Record<Tab, boolean>>(() => {
 })
 /* 會計、財務主管不看商機來源 */
 const showDealLink = computed(() => !['會計', '財務主管'].includes(store.role))
+/* 跨頁連結：角色沒有目標頁的檢視權限就不給點 */
+const canLicensesPage = computed(() => store.can('/inventory/licenses'))
+const canPoPage = computed(() => store.can('/purchase/po'))
+const canDealPage = computed(() => store.can('/sales/pipeline'))
 watch(() => props.orderId, () => {
   tab.value = 'lines'
 })
@@ -99,7 +106,7 @@ function submitVoid() {
   ElMessage.success(`保證單 ${x.soNo} 已作廢，商機轉為未成交`)
 }
 /* 角色：負責業務、業務主管、執行長可做交付與請款的動作；會計、財務主管、執行長做開票與收款 */
-const canOps = computed(() => !!o.value && (['業務主管', '執行長'].includes(store.role) || (store.role === '業務' && o.value.owner === store.currentUser.name)))
+const canOps = computed(() => !!o.value && canOperatePage.value && (['業務主管', '執行長'].includes(store.role) || (store.role === '業務' && o.value.owner === store.currentUser.name)))
 void TAX_RATE
 const lineRows = computed(() => o.value?.lines ?? [])
 const linesTotal = computed(() => lineRows.value.reduce((n, l) => n + l.qty * l.unitPrice, 0))
@@ -136,7 +143,7 @@ async function engClose() {
 
 /* 協作成員：沿用商機的成員（同一個案件） */
 const membersOpen = ref(false)
-const canManageMembers = computed(() => !!deal.value && store.canManageMembers(deal.value))
+const canManageMembers = computed(() => !!deal.value && canOperatePage.value && store.canManageMembers(deal.value))
 
 /* 附件：這個案件的全部附件（商機、SO、PO、出貨單），上傳掛在 SO */
 const uploading = ref(false)
@@ -198,10 +205,12 @@ function confirmStart() {
   ElMessage.success(`${lic.name} 起算 ${date}，到期 ${lic.expires}`)
 }
 function jumpLicense(l: License) {
+  if (!canLicensesPage.value) return
   router.push({ path: '/inventory/licenses', query: { lic: l.id } })
   emit('close')
 }
 function openDeal(id: string) {
+  if (!canDealPage.value) return
   router.push({ path: '/sales/pipeline', query: { deal: id } })
   emit('close')
 }
@@ -230,7 +239,7 @@ const changeDeal = ref<string | null>(null)
 const changeQuoteId = ref<string | undefined>()
 /* 合約變更：合約結束日前都可以（1112 會議：收款後也可能要變更）；沒有變更中的版本、未結案；負責業務、業務主管、執行長可做 */
 const contractEnded = computed(() => !!o.value?.contractEndAt && o.value.contractEndAt < today)
-const canChange = computed(() => !!o.value && !o.value.changeQuoteId && !closed.value && !contractEnded.value)
+const canChange = computed(() => !!o.value && canOperatePage.value && !o.value.changeQuoteId && !closed.value && !contractEnded.value)
 const changeHint = computed(() => (!o.value ? '' : contractEnded.value ? `合約已於 ${o.value.contractEndAt} 結束` : closed.value ? '已結案' : ''))
 
 /* 合約結束日：業務填；可從驗收完成日起算一年 */
@@ -286,7 +295,7 @@ function openChange() {
 const shipping = ref<Order | null>(null)
 const creatingShipment = ref<Order | null>(null)
 /* 出貨單由採購（倉管）建立，業務只做客戶簽收 */
-const canCreateShip = computed(() => !isG.value && ['採購', '執行長'].includes(store.role))
+const canCreateShip = computed(() => !isG.value && canShipPage.value && ['採購', '採購主管', '執行長'].includes(store.role))
 const canShip = computed(() => !!o.value && remainingToShip(o.value) > 0 && !o.value.changeQuoteId)
 /* 驗收不必等出貨（1113：先驗收未出貨），前面沒補的由檢查點用琥珀色提醒 */
 const canSign = computed(() => !!o.value && !isG.value && (o.value.stageIndex < 6 || unsignedShipments.value > 0) && !o.value.changeQuoteId)
@@ -332,7 +341,7 @@ async function confirmPaid(i: number) {
 /* 請款條件：負責業務、業務主管、財務主管、會計、執行長可改；結案後不行；已請款的期數在編輯器裡鎖定 */
 const msEditing = ref(false)
 const msDraft = ref<Milestone[]>([])
-const canEditMs = computed(() => !!o.value && !closed.value && (['業務主管', '財務主管', '會計', '執行長'].includes(store.role) || (store.role === '業務' && o.value.owner === store.currentUser.name)))
+const canEditMs = computed(() => !!o.value && canOperatePage.value && !closed.value && (['業務主管', '財務主管', '會計', '執行長'].includes(store.role) || (store.role === '業務' && o.value.owner === store.currentUser.name)))
 function editMs() {
   if (!o.value) return
   msDraft.value = o.value.milestones.map((m) => ({ ...m }))
@@ -379,7 +388,7 @@ async function renewFromSo() {
             <span v-if="isRenewal" class="tag slate">續約</span>
             <span v-if="isG && o.guaranteeReason" class="tag amber">{{ o.guaranteeReason }}</span>
             <span v-if="!isG && o.guaranteeNo" class="muted">原保證單 {{ o.guaranteeNo }}</span>
-            <span v-if="showDealLink" class="muted">商機 <a class="link" @click="openDeal(o.dealId)">{{ o.dealNo }}</a></span>
+            <span v-if="showDealLink" class="muted">商機 <a v-if="canDealPage" class="link" @click="openDeal(o.dealId)">{{ o.dealNo }}</a><template v-else>{{ o.dealNo }}</template></span>
           </div>
           <h2>{{ o.customer }}</h2>
           <p class="muted">{{ o.product }}</p>
@@ -535,7 +544,7 @@ async function renewFromSo() {
             <table v-if="soPos.length" class="plain-table inner">
               <thead><tr><th>PO</th><th>供應商</th><th>狀態</th><th>預計交期</th><th>原廠簽回</th></tr></thead>
               <tbody>
-                <tr v-for="p in soPos" :key="p.id" class="click-row" @click="router.push({ path: '/purchase/po', query: { po: p.poNo } })">
+                <tr v-for="p in soPos" :key="p.id" :class="{ 'click-row': canPoPage }" @click="canPoPage && router.push({ path: '/purchase/po', query: { po: p.poNo } })">
                   <td class="id">{{ p.poNo }}<span v-if="p.preOrder" class="tag amber">預下單</span></td>
                   <td>{{ p.vendor }}</td>
                   <td><span class="tag" :class="p.status === '待核准' ? 'amber' : p.status === '已到貨' ? 'olive' : 'teal'">{{ p.status }}</span></td>
@@ -578,7 +587,7 @@ async function renewFromSo() {
               <colgroup><col class="c4" /><col /><col class="c3" /><col class="c3" /></colgroup>
               <thead><tr><th>類型</th><th>項目</th><th class="num">數量</th><th>到期日</th></tr></thead>
               <tbody>
-                <tr v-for="l in o.licenses" :key="l.id" class="click-row" @click="jumpLicense(l)">
+                <tr v-for="l in o.licenses" :key="l.id" :class="{ 'click-row': canLicensesPage }" @click="jumpLicense(l)">
                   <td><span class="tag teal">{{ kindLabel(l.kind) }}</span></td>
                   <td>{{ l.name }}<div v-if="l.sku" class="muted small">{{ l.sku }}</div></td>
                   <td class="num">{{ l.qty }}</td>

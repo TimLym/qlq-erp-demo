@@ -162,7 +162,7 @@ const statusTag: Record<string, string> = { 待簽核: 'amber', 已核准: 'oliv
       <div>
         <h1>行政申請</h1>
       </div>
-      <div class="actions"><el-button type="primary" :icon="Plus" @click="openCreate">{{ conf.noApproval ? '新增預約' : '新增申請' }}</el-button></div>
+      <div v-if="store.can('/apps', 'edit')" class="actions"><el-button type="primary" :icon="Plus" @click="openCreate">{{ conf.noApproval ? '新增預約' : '新增申請' }}</el-button></div>
     </div>
 
     <el-tabs v-model="tab" class="tabs">

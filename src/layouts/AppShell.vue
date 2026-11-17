@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Search, Bell, Star, StarFilled, Plus, ArrowDown, Fold, Expand, Setting, SwitchButton } from '@element-plus/icons-vue'
-import { navForRole, phaseLabel, findNavItem, type NavItem } from '../nav'
+import { Search, Bell, Star, StarFilled, Plus, ArrowDown, Fold, Expand, Setting, SwitchButton, Switch } from '@element-plus/icons-vue'
+import { navGroups, phaseLabel, findNavItem, type NavItem } from '../nav'
 import { useAppStore } from '../stores/app'
 import { purchaseOrders } from '../mock/data'
 import NotifyBell from '../components/NotifyBell.vue'
@@ -73,7 +73,15 @@ watch(
 )
 
 /* 左欄依角色顯示：業務看不到採購內部、報表、系統管理等與自己無關的項目 */
-const visibleGroups = computed(() => navForRole(store.role))
+const visibleGroups = computed(() => navGroups.map((g) => ({ ...g, items: g.items.filter((it) => store.can(it.path)) })).filter((g) => g.items.length > 0))
+/* 切換身分或角色後，目前這頁沒有權限就回首頁 */
+watch([() => store.role, () => store.currentUserId], () => {
+  /* 「沒有權限」頁自己會在切換後跳到原本要去的頁 */
+  if (route.path === '/denied') return
+  router.replace(store.can(route.path) ? route.path : '/')
+})
+/* 身分或角色一變就重掛頁面，開著的抽屜、篩選一起清掉，不會留著上一個角色看得到的單 */
+const viewKey = computed(() => `${store.currentUserId}|${store.role}|${store.actingAs?.forUserId ?? ''}`)
 const visiblePaths = computed(() => new Set(visibleGroups.value.flatMap((g) => g.items.map((it) => it.path))))
 const favoriteItems = computed(() => store.favorites.filter((p) => visiblePaths.value.has(p)).map((p) => findNavItem(p)?.item).filter((x): x is NavItem => !!x))
 
@@ -87,10 +95,10 @@ function toggleFav(e: Event, path: string) {
 /* 快速動作也依角色：業務看不到建立採購單，採購看不到新增商機 */
 const quickActions = computed(() =>
   [
-    { label: '新增商機', hint: '防撞檢核後取號', to: '/sales/pipeline?new=1', roles: ['業務', '業務主管', '執行長'] },
-    { label: '建立採購單', hint: '對應 SO 或預下單', to: '/purchase/po', roles: ['採購', '執行長'] },
-    { label: '待我簽核', hint: `${store.pendingForMe.length} 件`, to: '/approvals' },
-  ].filter((a) => !a.roles || a.roles.includes(store.role)),
+    { label: '新增商機', hint: '防撞檢核後取號', to: '/sales/pipeline?new=1', roles: ['業務', '業務主管', '執行長'], level: 'edit' as const },
+    { label: '建立採購單', hint: '對應 SO 或預下單', to: '/purchase/po', roles: ['採購', '執行長'], level: 'edit' as const },
+    { label: '待我簽核', hint: `${store.pendingForMe.length} 件`, to: '/approvals', level: 'view' as const },
+  ].filter((a) => (!a.roles || a.roles.includes(store.role)) && store.can(a.to, a.level)),
 )
 const q = ref('')
 const focused = ref(false)
@@ -100,13 +108,13 @@ const results = computed(() => {
   const hit = (v: string) => v.toLowerCase().includes(s)
   const out: { group: string; label: string; sub: string; to: string }[] = []
   quickActions.value.filter((a) => hit(a.label)).forEach((a) => out.push({ group: '動作', label: a.label, sub: a.hint, to: a.to }))
-  store.scopedDeals.filter((d) => hit(d.dealNo) || hit(d.customer) || hit(d.product)).forEach((d) =>
+  if (store.can('/sales/pipeline')) store.scopedDeals.filter((d) => hit(d.dealNo) || hit(d.customer) || hit(d.product)).forEach((d) =>
     out.push({ group: '商機', label: `${d.customer}（${d.customerDept}）`, sub: `${d.dealNo} · ${d.stage}`, to: `/sales/pipeline?deal=${d.id}` }),
   )
-  store.scopedOrders.filter((o) => hit(o.soNo) || hit(o.customer)).forEach((o) =>
-    out.push({ group: '訂單', label: o.customer, sub: o.soNo, to: '/sales/orders' }),
+  if (store.can('/sales/orders')) store.scopedOrders.filter((o) => hit(o.soNo) || hit(o.customer)).forEach((o) =>
+    out.push({ group: '訂單', label: o.customer, sub: o.soNo, to: `/sales/orders?so=${o.soNo}` }),
   )
-  purchaseOrders.filter((p) => hit(p.poNo) || hit(p.vendor) || hit(p.customer)).forEach((p) =>
+  if (store.can('/purchase/po')) purchaseOrders.filter((p) => hit(p.poNo) || hit(p.vendor) || hit(p.customer)).forEach((p) =>
     out.push({ group: '採購單', label: p.vendor, sub: `${p.poNo} · ${p.customer}`, to: '/purchase/po' }),
   )
   visibleGroups.value.flatMap((g) => g.items).filter((it) => hit(it.label)).forEach((it) =>
@@ -229,7 +237,7 @@ function onBlur() {
               <span class="avatar" aria-hidden="true">{{ initials }}</span>
               <span class="who">
                 <span class="who-name">{{ store.currentUser.name }}</span>
-                <span class="who-role">{{ store.role }}</span>
+                <span class="who-role">{{ store.role }}<template v-if="store.actingAs">（代理）</template></span>
               </span>
               <el-icon class="chev"><ArrowDown /></el-icon>
             </button>
@@ -239,6 +247,11 @@ function onBlur() {
                   通知中心<span v-if="store.unreadCount" class="menu-count">{{ store.unreadCount }}</span>
                 </el-dropdown-item>
                 <el-dropdown-item command="settings" :icon="Setting">個人設定</el-dropdown-item>
+                <template v-if="store.switchableRoles.length">
+                  <el-dropdown-item divided disabled :icon="Switch">切換角色</el-dropdown-item>
+                  <el-dropdown-item class="role-item" :class="{ on: !store.actingAs }" @click="store.switchRole(null)">{{ store.currentUser.role }}<span class="muted">本職</span></el-dropdown-item>
+                  <el-dropdown-item v-for="r in store.switchableRoles" :key="r.role + (r.forUserId ?? '')" class="role-item" :class="{ on: store.actingAs?.role === r.role && store.actingAs?.forUserId === r.forUserId }" @click="store.switchRole({ role: r.role, forUserId: r.forUserId, source: r.source })">{{ r.label }}<span class="muted">{{ r.source }}</span></el-dropdown-item>
+                </template>
                 <el-dropdown-item divided disabled :icon="SwitchButton">切換示範身分</el-dropdown-item>
                 <el-dropdown-item v-for="u in store.users" :key="u.id" class="persona-item" :class="{ on: u.id === store.currentUserId }" @click="store.switchUser(u.id)">
                   {{ u.name }}<span class="muted">{{ u.role }}</span>
@@ -249,7 +262,7 @@ function onBlur() {
         </div>
       </header>
       <main class="content">
-        <RouterView />
+        <RouterView :key="viewKey" />
       </main>
       <ImportantCards />
     </div>

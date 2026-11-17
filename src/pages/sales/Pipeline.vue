@@ -341,8 +341,8 @@ onMounted(() => {
   const id = route.query.deal as string | undefined
   drawerTab.value = (route.query.tab as typeof drawerTab.value) ?? undefined
   drawerQuote.value = (route.query.quote as string | undefined) ?? undefined
-  if (id) openDeal.value = id
-  if (route.query.new) {
+  if (id && store.scopedDeals.some((d) => d.id === id)) openDeal.value = id
+  if (route.query.new && store.can('/sales/pipeline', 'edit')) {
     creating.value = true
     if (route.query.customer) form.value.customer = String(route.query.customer)
   }
@@ -361,7 +361,7 @@ onMounted(() => {
           <el-radio-button value="list">列表</el-radio-button>
           <el-radio-button value="weekly">週會視圖</el-radio-button>
         </el-radio-group>
-        <el-button type="primary" :icon="Plus" @click="creating = true">新增商機</el-button>
+        <el-button v-if="store.can('/sales/pipeline', 'edit')" type="primary" :icon="Plus" @click="creating = true">新增商機</el-button>
       </div>
     </div>
 

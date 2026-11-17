@@ -26,7 +26,7 @@ onMounted(async () => {
   setTimeout(() => (hl.value = null), 2500)
 })
 /* 預留貨：採購核准（可縮短天數）或退回；保留中可提前釋放 */
-const canHandle = computed(() => ['採購', '採購主管'].includes(store.role))
+const canHandle = computed(() => ['採購', '採購主管'].includes(store.role) && store.can('/inventory', 'edit'))
 const holds = computed(() => stockHolds.filter((h) => h.status === '待核准' || h.status === '保留中').sort((a, b) => (a.status === b.status ? a.requestedAt.localeCompare(b.requestedAt) : a.status === '待核准' ? -1 : 1)))
 const customerOf = (h: StockHold) => deals.find((d) => d.id === h.dealId)?.customer ?? ''
 const soon = (h: StockHold) => !!h.expiresAt && h.expiresAt <= addDays(HOLD_TODAY, 3)

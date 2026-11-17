@@ -12,7 +12,7 @@ import { useJump } from '../../composables/useJump'
 
 const route = useRoute()
 const router = useRouter()
-const { goRef } = useJump()
+const { goRef, canRef } = useJump()
 const creating = ref(false)
 const presetSo = ref<string | undefined>()
 const q = ref('')
@@ -21,7 +21,7 @@ const detail = ref<PurchaseOrder | null>(null)
 /* 篩選：全部、待核准、已下單、預下單、已到貨 */
 const filter = ref<'all' | 'pending' | 'ordered' | 'pre' | 'received'>((route.query.filter as 'pre') === 'pre' ? 'pre' : 'all')
 const receiving = ref<PurchaseOrder | null>(null)
-const canOperate = computed(() => store.role === '採購' || store.role === '執行長')
+const canOperate = computed(() => (store.role === '採購' || store.role === '採購主管' || store.role === '執行長') && store.can('/purchase/po', 'edit'))
 onMounted(() => {
   const so = route.query.so as string | undefined
   if (so) {
@@ -105,7 +105,7 @@ const statusTag: Record<string, string> = { 待核准: 'amber', 已下單: 'teal
             <tr class="row" :class="{ open: detail?.id === p.id }" @click="detail = p">
               <td class="id">{{ p.poNo }}<span v-if="p.preOrder" class="tag amber">預下單</span></td>
               <td>{{ p.vendor }}</td>
-              <td class="id"><a class="link" @click.stop="goRef(p.soNo)">{{ p.soNo }}</a></td>
+              <td class="id"><a v-if="canRef(p.soNo)" class="link" @click.stop="goRef(p.soNo)">{{ p.soNo }}</a><template v-else>{{ p.soNo }}</template></td>
               <td>{{ p.customer }}</td>
               <td class="num">{{ isSales ? '—' : money(p.amount) }}</td>
               <td>{{ isSales ? '—' : p.terms }}<div v-if="p.prepaid && !isSales" class="muted small">已預付 {{ money(p.prepaid) }}</div></td>

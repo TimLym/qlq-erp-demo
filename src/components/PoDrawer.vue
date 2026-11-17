@@ -14,7 +14,7 @@ const open = computed({
     if (!v) emit('close')
   },
 })
-const { goRef } = useJump()
+const { goRef, canRef } = useJump()
 const statusTag: Record<string, string> = { 待核准: 'amber', 已下單: 'teal', 已到貨: 'olive' }
 /*
  * 關聯路徑（批次 6）：商機 →（保證單）→ PO → SO。預下單的 PO 先掛在商機或保證單上，
@@ -51,7 +51,7 @@ const path = computed<PathNode[]>(() => {
             <span v-if="po.preOrder" class="tag amber">預下單</span>
           </div>
           <h2>{{ po.vendor }}<span class="dept">{{ po.customer }}</span></h2>
-          <p class="muted"><a class="link" @click="goRef(po.soNo)">{{ po.soNo }}</a></p>
+          <p class="muted"><a v-if="canRef(po.soNo)" class="link" @click="goRef(po.soNo)">{{ po.soNo }}</a><template v-else>{{ po.soNo }}</template></p>
           <div class="meta">
             <span v-if="!isSales">金額 <b class="num">{{ money(po.amount) }}</b></span>
             <span v-if="!isSales">付款條件 <b>{{ po.terms }}</b><template v-if="po.prepaid">（已預付 {{ money(po.prepaid) }}）</template></span>
@@ -66,7 +66,7 @@ const path = computed<PathNode[]>(() => {
           <ol class="path">
             <li v-for="(n, i) in path" :key="i" :class="{ done: n.done }">
               <span class="k">{{ n.kind }}</span>
-              <a v-if="n.jump" class="link id" @click="goRef(n.jump)">{{ n.no }}</a>
+              <a v-if="n.jump && canRef(n.jump)" class="link id" @click="goRef(n.jump)">{{ n.no }}</a>
               <span v-else class="id">{{ n.no }}</span>
               <span class="muted small">{{ n.state }}</span>
             </li>

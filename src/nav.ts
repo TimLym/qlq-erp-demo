@@ -142,6 +142,7 @@ export const navGroups: NavGroup[] = [
     base: '/admin',
     phase: 1,
     items: [
+      { roles: ['執行長', '系統管理員'], label: '角色與權限', path: '/admin/permissions', ready: true },
       { roles: ['執行長', '財務主管', '系統管理員'], label: '簽核進度設定', path: '/admin/approval-rules', ready: true },
       { roles: ['業務主管', '執行長', '系統管理員'], label: '離職業務交接', path: '/admin/handover', ready: true },
       { roles: ['執行長', '系統管理員'], label: '到期類型', path: '/admin/expiry-kinds', ready: true },

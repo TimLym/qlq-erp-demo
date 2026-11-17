@@ -6,7 +6,7 @@ import { useAppStore } from '../../stores/app'
 
 /** 到期類型：系統管理員維護；每種類型有預設提醒天數，個人設定可以覆寫 */
 const store = useAppStore()
-const canEdit = computed(() => ['執行長', '系統管理員'].includes(store.role))
+const canEdit = computed(() => ['執行長', '系統管理員'].includes(store.role) && store.can('/admin/expiry-kinds', 'edit'))
 const newLabel = ref('')
 const newDays = ref(90)
 const inUse = (key: string) => orders.some((o) => o.licenses.some((l) => l.kind === key))

@@ -17,7 +17,7 @@ import ApprovalRoute from '../../components/ApprovalRoute.vue'
 import { pct } from '../../utils/format'
 
 const store = useAppStore()
-const canEdit = computed(() => ['執行長', '財務主管', '系統管理員'].includes(store.role))
+const canEdit = computed(() => ['執行長', '財務主管', '系統管理員'].includes(store.role) && store.can('/admin/approval-rules', 'edit'))
 
 /* 畫面改的是草稿；儲存才寫回 routing 並升版本 */
 const clone = (c: RoutingConfig): RoutingConfig => JSON.parse(JSON.stringify(c))

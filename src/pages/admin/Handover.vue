@@ -2,6 +2,9 @@
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { handovers as seed, users, type HandoverCase } from '../../mock/data'
+import { useAppStore } from '../../stores/app'
+
+const store = useAppStore()
 
 const cases = ref<HandoverCase[]>(seed.map((h) => ({ ...h })))
 const tab = ref<'待交接' | '已完成'>('待交接')
@@ -63,7 +66,7 @@ function complete(h: HandoverCase) {
                     <el-option v-for="u in salesUsers.filter((u) => u.name !== h.leavingUser)" :key="u.id" :value="u.name" :label="`${u.name}（${u.role}）`" />
                   </el-select>
                 </td>
-                <td class="right"><el-button size="small" type="primary" plain :disabled="!h.successor" @click="complete(h)">確認交接</el-button></td>
+                <td class="right"><el-button v-if="store.can('/admin/handover', 'edit')" size="small" type="primary" plain :disabled="!h.successor" @click="complete(h)">確認交接</el-button></td>
               </tr>
               <tr v-if="!list.length"><td colspan="5" class="empty">沒有待交接的客戶。</td></tr>
             </tbody>

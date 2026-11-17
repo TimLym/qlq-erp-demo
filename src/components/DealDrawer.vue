@@ -52,7 +52,10 @@ const dealComments = computed(() =>
 /* 協作成員：負責業務、主管以外被拉進來的人；工程師由派工加入 */
 const canSeeMoney = computed(() => !!deal.value && store.canSeeMoney(deal.value))
 const frozen = computed(() => deal.value?.stage === 'SO已成立')
-const canManageMembers = computed(() => !!deal.value && !frozen.value && store.canManageMembers(deal.value))
+/* 頁面權限：Pipeline 只有「檢視」時，抽屜裡的編輯、報價、轉單、成員管理都不開 */
+const canOperatePage = computed(() => store.can('/sales/pipeline', 'edit'))
+const canOrdersPage = computed(() => store.can('/sales/orders'))
+const canManageMembers = computed(() => !!deal.value && !frozen.value && canOperatePage.value && store.canManageMembers(deal.value))
 const members = computed(() => (deal.value ? store.membersOf(deal.value.id) : []))
 const collaborators = computed(() => members.value.filter((m) => m.kind === '協作成員'))
 const memberUser = (id: string) => store.users.find((u) => u.id === id)
@@ -79,7 +82,7 @@ const extOf = (f: string) => (f.includes('.') ? f.slice(f.lastIndexOf('.') + 1).
 const editing = ref(false)
 const edit = ref({ stage: '規劃預算' as PipelineStage, prob: 0, amount: 0, expectClose: '', nextAction: '', poc: '', lostReason: '', via: '直接交易' as Deal['via'], endUser: '', kind: '新購' as Deal['kind'], renewalOf: '', renewalReason: '到期續簽' as NonNullable<Deal['renewalReason']>, renewalItems: [] as string[], preOrder: false, prepay: false })
 const locked = computed(() => deal.value?.stage === 'SO已成立')
-const canEdit = computed(() => !!deal.value && !locked.value && (deal.value.ownerId === store.currentUserId || ['業務主管', '執行長'].includes(store.role)))
+const canEdit = computed(() => !!deal.value && canOperatePage.value && !locked.value && (deal.value.ownerId === store.currentUserId || ['業務主管', '執行長'].includes(store.role)))
 const amountFollowsQuote = computed(() => !!deal.value && deal.value.quoteVersions > 0)
 const stageOptions = computed(() => pipelineStages.filter((st) => st !== 'SO已成立'))
 function startEdit() {
@@ -195,7 +198,7 @@ const renewalItemLabels = computed(() => (renewalOf.value && deal.value?.renewal
 watch(() => edit.value.renewalOf, (id, prev) => { if (editing.value && id !== prev) edit.value.renewalItems = renewalLicenses.value.map((l) => l.id) })
 
 /* SO 成立後商務欄位鎖定，但協作的事繼續在商機抽屜：下一步、工程支援、留言、成員 */
-const canCollab = computed(() => !!deal.value && deal.value.stage !== '未成交' && (deal.value.ownerId === store.currentUserId || ['業務主管', '執行長'].includes(store.role)))
+const canCollab = computed(() => !!deal.value && canOperatePage.value && deal.value.stage !== '未成交' && (deal.value.ownerId === store.currentUserId || ['業務主管', '執行長'].includes(store.role)))
 
 /* 報價單版本工作區在 QuoteWorkbench；這裡只接送審、簽核單與系統留言 */
 const dealOrder = computed(() => (deal.value ? orders.find((o) => o.dealId === deal.value!.id && !o.voidedAt) : undefined))
@@ -216,7 +219,7 @@ function submitGuarantee() {
   if (g) ElMessage.success(`已轉保證單 ${g.soNo}，不計業績；議價完成後照常上單送審`)
 }
 const canEditQuote = computed(
-  () => !!deal.value && deal.value.stage !== 'SO已成立' && deal.value.stage !== '未成交' && (deal.value.ownerId === store.currentUserId || ['業務主管', '執行長'].includes(store.role)),
+  () => !!deal.value && canOperatePage.value && deal.value.stage !== 'SO已成立' && deal.value.stage !== '未成交' && (deal.value.ownerId === store.currentUserId || ['業務主管', '執行長'].includes(store.role)),
 )
 function onSubmitted() {
   emit('close')
@@ -240,6 +243,7 @@ function submitFromCard() {
   onSubmitted()
 }
 function openOrder(soNo: string) {
+  if (!canOrdersPage.value) return
   emit('close')
   router.push({ path: '/sales/orders', query: { so: soNo } })
 }
@@ -316,7 +320,7 @@ const stageTag: Record<string, string> = {
           <div class="eyebrow">
             <span class="num">{{ deal.dealNo }}</span>
             <span class="tag" :class="stageTag[deal.stage]">{{ deal.stage }}</span>
-            <button v-if="dealOrder && isGuarantee(dealOrder)" type="button" class="tag amber link" :title="`開啟保證單 ${dealOrder.soNo}`" @click="openOrder(dealOrder.soNo)">保證單 {{ dealOrder.soNo }} · {{ dealOrder.guaranteeReason }}</button>
+            <button v-if="dealOrder && isGuarantee(dealOrder) && canOrdersPage" type="button" class="tag amber link" :title="`開啟保證單 ${dealOrder.soNo}`" @click="openOrder(dealOrder.soNo)">保證單 {{ dealOrder.soNo }} · {{ dealOrder.guaranteeReason }}</button>
             <span v-else-if="dealOrder" class="tag slate" :title="dealOrder.soNo">{{ dealOrder.soNo }} · {{ isOrderClosed(dealOrder) ? '結案' : execStages[dealOrder.stageIndex] }}</span>
             <span v-if="deal.kind !== '新購'" class="tag slate">{{ deal.kind }}</span>
             <button v-if="renewalOf" type="button" class="tag teal link" :title="`開啟原商機 ${renewalOf.dealNo}`" @click="emit('open', renewalOf.id)">續約自 {{ renewalOf.dealNo }}<template v-if="renewalOfOrder"> · {{ renewalOfOrder.soNo }}</template></button>
@@ -339,7 +343,7 @@ const stageTag: Record<string, string> = {
 
       <div v-if="frozen && dealOrder" class="frozen-bar">
         <span>已轉 <b class="num">{{ dealOrder.soNo }}</b></span>
-        <el-button size="small" type="primary" @click="openOrder(dealOrder.soNo)">前往 SO</el-button>
+        <el-button v-if="canOrdersPage" size="small" type="primary" @click="openOrder(dealOrder.soNo)">前往 SO</el-button>
       </div>
 
       <el-tabs v-model="activeTab" class="tabs">

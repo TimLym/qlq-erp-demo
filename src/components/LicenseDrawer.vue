@@ -9,14 +9,14 @@ import { useJump } from '../composables/useJump'
 const props = defineProps<{ order: Order | null; license: License | null }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
 const store = useAppStore()
-const { goSo } = useJump()
+const { goSo, canSo } = useJump()
 const open = computed({
   get: () => !!props.order && !!props.license,
   set: (v) => {
     if (!v) emit('close')
   },
 })
-const canEdit = computed(() => !!props.order && (['業務主管', '執行長'].includes(store.role) || (store.role === '業務' && props.order.owner === store.currentUser.name)))
+const canEdit = computed(() => !!props.order && store.can('/inventory/licenses', 'edit') && (['業務主管', '執行長'].includes(store.role) || (store.role === '業務' && props.order.owner === store.currentUser.name)))
 const left = computed(() => (props.order && props.license ? store.licenseStatus(props.order, props.license).left : 0))
 const kindLabel = computed(() => expiryKinds.find((k) => k.key === props.license?.kind)?.label ?? props.license?.kind ?? '')
 const expires = ref('')
@@ -48,7 +48,7 @@ function jumpSo(soNo: string) {
         <div>
           <div class="eyebrow"><span class="tag teal">{{ kindLabel }}</span><span class="id">{{ license.sku }}</span></div>
           <h2>{{ license.name }}<span class="dept">× {{ license.qty }}</span></h2>
-          <p class="muted">{{ order.customer }} · <a class="link" @click="jumpSo(order.soNo)">{{ order.soNo }}</a></p>
+          <p class="muted">{{ order.customer }} · <a v-if="canSo" class="link" @click="jumpSo(order.soNo)">{{ order.soNo }}</a><template v-else>{{ order.soNo }}</template></p>
         </div>
         <el-button @click="emit('close')">關閉</el-button>
       </header>

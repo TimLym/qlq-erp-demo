@@ -10,8 +10,8 @@ import { evaluate } from '../../mock/routing'
 const store = useAppStore()
 const q = ref('')
 const status = ref<'' | Vendor['status']>('')
-const canApply = computed(() => ['業務', '業務主管', '採購', '執行長'].includes(store.role))
-const canEdit = computed(() => ['採購', '執行長'].includes(store.role))
+const canApply = computed(() => ['業務', '業務主管', '採購', '採購主管', '執行長'].includes(store.role) && store.can('/purchase/vendors', 'edit'))
+const canEdit = computed(() => ['採購', '採購主管', '執行長'].includes(store.role) && store.can('/purchase/vendors', 'edit'))
 const seesBank = computed(() => ['採購', '財務主管', '會計', '執行長'].includes(store.role))
 
 const list = computed(() =>

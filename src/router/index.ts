@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { useAppStore } from '../stores/app'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -32,9 +33,19 @@ const router = createRouter({
     { path: '/admin/approval-rules', component: () => import('../pages/admin/ApprovalRules.vue'), meta: { title: '簽核進度設定' } },
     { path: '/admin/expiry-kinds', component: () => import('../pages/admin/ExpiryKinds.vue'), meta: { title: '到期類型' } },
     { path: '/admin/own-services', component: () => import('../pages/admin/OwnServices.vue'), meta: { title: '自有服務項目' } },
+    { path: '/admin/permissions', component: () => import('../pages/admin/Permissions.vue'), meta: { title: '角色與權限' } },
+    { path: '/denied', component: () => import('../pages/Denied.vue'), meta: { title: '沒有權限' } },
     { path: '/:pathMatch(.*)*', component: () => import('../pages/Planned.vue'), meta: { title: '規劃中' } },
   ],
   scrollBehavior: () => ({ top: 0 }),
+})
+
+/* 守門：這個角色沒有這一頁的檢視權限就到「沒有權限」頁（外部頁不管） */
+router.beforeEach((to) => {
+  if (to.meta.ext || to.path === '/denied') return true
+  const store = useAppStore()
+  if (store.can(to.path)) return true
+  return { path: '/denied', query: { from: to.fullPath } }
 })
 
 router.afterEach((to) => {

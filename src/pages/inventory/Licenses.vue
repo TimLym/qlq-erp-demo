@@ -54,7 +54,7 @@ onMounted(() => {
         <thead><tr><th>客戶 / SO</th><th>類型</th><th>項目</th><th>到期日</th><th class="num">剩餘天數</th></tr></thead>
         <tbody>
           <tr v-for="r in rows" :key="r.l.id" class="row" @click="detail = { o: r.o, l: r.l }">
-            <td><b>{{ r.o.customer }}</b><div class="muted small"><a class="link" @click.stop="router.push({ path: '/sales/orders', query: { so: r.o.soNo } })">{{ r.o.soNo }}</a> · {{ r.o.owner }}</div></td>
+            <td><b>{{ r.o.customer }}</b><div class="muted small"><a v-if="store.can('/sales/orders')" class="link" @click.stop="router.push({ path: '/sales/orders', query: { so: r.o.soNo } })">{{ r.o.soNo }}</a><template v-else>{{ r.o.soNo }}</template> · {{ r.o.owner }}</div></td>
             <td><span class="tag teal">{{ kindLabel(r.l.kind) }}</span></td>
             <td>{{ r.l.name }} × {{ r.l.qty }}<div class="muted small id">{{ r.l.sku }}</div></td>
             <td class="id">{{ r.l.expires }}</td>
