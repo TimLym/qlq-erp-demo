@@ -172,22 +172,22 @@ const custHtml = (o: Order) => `<b>${esc(o.customer)}</b>${isRenewal(o) ? ' <spa
 const allColumnDefs = (): ColDef<Order>[] => [
   /* 組合欄（一欄兩行）與子欄（各自一欄）：欄位設定裡互斥，預設子欄「訂單編號」「客戶」 */
   { colId: 'soCombo', headerName: '訂單／商機編號', width: 172, pinned: 'left', hide: true, valueGetter: (p) => p.data?.soNo, cellClass: 'num', getQuickFilterText: (p) => `${p.data?.soNo ?? ''} ${p.data?.dealNo ?? ''}`, cellRenderer: (p: { data?: Order }) => (p.data ? `${p.data.soNo}<div class="sub">${dealLink(p.data)}</div>` : '') },
-  { field: 'soNo', headerName: '訂單編號', width: 168, pinned: 'left', cellClass: 'num' },
+  { field: 'soNo', headerName: '訂單編號', width: 160, pinned: 'left', cellClass: 'num' },
   { field: 'dealNo', headerName: '商機編號', width: 160, hide: true, cellClass: 'num', cellRenderer: (p: { data?: Order }) => (p.data ? dealLink(p.data) : '') },
   { colId: 'custCombo', headerName: '客戶／需求摘要', flex: 1, minWidth: 280, hide: true, valueGetter: (p) => p.data?.customer, getQuickFilterText: (p) => `${p.data?.customer ?? ''} ${p.data?.product ?? ''}`, cellRenderer: (p: { data?: Order }) => (p.data ? `${custHtml(p.data)}<div class="sub ellipsis" title="${esc(p.data.product)}">${esc(p.data.product)}</div>` : '') },
-  { field: 'customer', headerName: '客戶', flex: 1, minWidth: 180, cellRenderer: (p: { data?: Order }) => (p.data ? custHtml(p.data) : '') },
+  { field: 'customer', headerName: '客戶', flex: 1, minWidth: 120, cellRenderer: (p: { data?: Order }) => (p.data ? custHtml(p.data) : '') },
   { field: 'product', headerName: '需求摘要', width: 260, hide: true, tooltipField: 'product' },
-  { field: 'owner', headerName: '負責業務', width: 104 },
-  { field: 'amount', headerName: '訂單金額（未稅）', width: 150, type: 'rightAligned', filter: 'agNumberColumnFilter', cellRenderer: moneyCell((o) => o.amount) },
+  { field: 'owner', headerName: '負責業務', width: 96 },
+  { field: 'amount', headerName: '訂單金額（未稅）', width: 128, type: 'rightAligned', filter: 'agNumberColumnFilter', cellRenderer: moneyCell((o) => o.amount) },
   { colId: 'amountTax', headerName: '訂單金額（含稅）', width: 150, hide: true, type: 'rightAligned', filter: 'agNumberColumnFilter', valueGetter: (p) => (p.data ? orderTaxTotal(p.data) : 0), cellRenderer: moneyCell((o) => orderTaxTotal(o)) },
   { colId: 'marginAmt', headerName: salesOnly.value ? '業務毛利金額' : '毛利金額', width: 132, hide: true, type: 'rightAligned', filter: 'agNumberColumnFilter', valueGetter: (p) => (p.data ? p.data.amount - p.data.cost : 0), cellRenderer: moneyCell((o) => o.amount - o.cost), tooltipValueGetter: (p) => (p.data ? marginTip(p.data) : '') },
-  { colId: 'margin', headerName: salesOnly.value ? '業務毛利率' : '毛利率', width: 112, type: 'rightAligned', filter: 'agNumberColumnFilter', valueGetter: (p) => (p.data ? marginOf(p.data) : 0), valueFormatter: (p) => pct(p.value), cellClass: 'num', tooltipValueGetter: (p) => (p.data ? marginTip(p.data) : '') },
-  { colId: 'exec', headerName: '執行進度', width: 330, sortable: false, cellRenderer: execRenderer, cellClass: 'cp-col', filter: CheckFilter, filterParams: { options: EXEC_OPTS, match: matchExec } },
-  { colId: 'toInvoice', headerName: '待開票筆數', width: 132, type: 'rightAligned', valueGetter: (p) => (p.data && !inactive(p.data) ? billingProgress(p.data).toInvoice : -1), cellRenderer: invRenderer, filter: CheckFilter, filterParams: { options: INV_OPTS, match: matchInv } },
+  { colId: 'margin', headerName: salesOnly.value ? '業務毛利率' : '毛利率', width: 96, type: 'rightAligned', filter: 'agNumberColumnFilter', valueGetter: (p) => (p.data ? marginOf(p.data) : 0), valueFormatter: (p) => pct(p.value), cellClass: 'num', tooltipValueGetter: (p) => (p.data ? marginTip(p.data) : '') },
+  { colId: 'exec', headerName: '執行進度', width: 280, sortable: false, cellRenderer: execRenderer, cellClass: 'cp-col', filter: CheckFilter, filterParams: { options: EXEC_OPTS, match: matchExec } },
+  { colId: 'toInvoice', headerName: '待開票筆數', width: 108, type: 'rightAligned', valueGetter: (p) => (p.data && !inactive(p.data) ? billingProgress(p.data).toInvoice : -1), cellRenderer: invRenderer, filter: CheckFilter, filterParams: { options: INV_OPTS, match: matchInv } },
   { colId: 'invProgress', headerName: '開票進度（含稅）', width: 210, hide: true, filter: false, valueGetter: (p) => (p.data && !inactive(p.data) ? billingProgress(p.data).invoicedPct : -1), cellRenderer: progRenderer('inv') },
-  { colId: 'toCollect', headerName: '待收款筆數', width: 132, type: 'rightAligned', valueGetter: (p) => (p.data && !inactive(p.data) ? billingProgress(p.data).toCollect : -1), cellRenderer: colRenderer, filter: CheckFilter, filterParams: { options: COL_OPTS, match: matchCol } },
+  { colId: 'toCollect', headerName: '待收款筆數', width: 108, type: 'rightAligned', valueGetter: (p) => (p.data && !inactive(p.data) ? billingProgress(p.data).toCollect : -1), cellRenderer: colRenderer, filter: CheckFilter, filterParams: { options: COL_OPTS, match: matchCol } },
   { colId: 'payProgress', headerName: '收款進度（含稅）', width: 210, hide: true, filter: false, valueGetter: (p) => (p.data && !inactive(p.data) ? billingProgress(p.data).paidPct : -1), cellRenderer: progRenderer('pay') },
-  { colId: 'actions', headerName: '動作', width: 196, filter: false, sortable: false, cellRenderer: actRenderer },
+  { colId: 'actions', headerName: '動作', width: 176, filter: false, sortable: false, cellRenderer: actRenderer },
 ]
 /* 金額類欄位：工程角色直接不給（欄位設定也看不到），切換示範身分時重建 */
 const MONEY_COLS = new Set(['amount', 'amountTax', 'marginAmt', 'margin', 'toInvoice', 'invProgress', 'toCollect', 'payProgress', 'actions'])

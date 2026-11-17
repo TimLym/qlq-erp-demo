@@ -92,7 +92,7 @@ function confirm() {
       <table class="plain-table">
         <thead><tr><th>品項</th><th>批次</th><th class="num">出貨</th><th>到期</th></tr></thead>
         <tbody>
-          <tr v-for="(p, i) in picks" :key="i" :class="{ bad: p.batch === '（庫存不足）' }">
+          <tr v-for="(p, i) in picks" :key="i" :class="{ later: p.batch === '（尚未到貨）' }">
             <td>{{ p.name }}<div class="muted small">{{ p.sku }} · 需要 {{ p.need }}</div></td>
             <td class="id">{{ p.batch }}<div v-if="p.available" class="muted small">可用 {{ p.available }}</div></td>
             <td class="num"><el-input-number v-model="p.qty" :min="0" :max="p.available" :precision="0" :controls="false" size="small" class="n" /></td>
@@ -115,7 +115,7 @@ function confirm() {
 <style scoped>
 .n { width: 80px; }
 .opts { display: flex; gap: 16px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
-.bad td { color: var(--red); }
+.later td { color: var(--muted); }
 .problem { color: var(--red); font-size: 13px; margin: 8px 0 0; }
 .small { font-size: 12px; }
 </style>
