@@ -27,7 +27,7 @@ function switchAndGo() {
       <dl class="kv">
         <dt>頁面</dt><dd>{{ page ? `${page.group} → ${page.label}` : from }}</dd>
         <dt>需要</dt><dd>這一頁的「檢視」權限</dd>
-        <dt>目前角色</dt><dd>{{ store.currentUser.name }}・{{ store.role }}</dd>
+        <dt>目前角色</dt><dd>{{ store.currentUser.name }}・{{ store.roleLabel }}</dd>
       </dl>
       <div class="acts">
         <el-button v-if="viaSwitch" type="primary" @click="switchAndGo">切換為{{ viaSwitch.label }}並前往</el-button>

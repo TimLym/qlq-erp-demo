@@ -41,7 +41,7 @@ function saveRemindDays() {
         <div class="panel-head"><h2>基本資料</h2></div>
         <dl class="kv info">
           <dt>姓名</dt><dd>{{ store.currentUser.name }}</dd>
-          <dt>角色</dt><dd>{{ store.role }}</dd>
+          <dt>角色</dt><dd>{{ store.roleLabel }}</dd>
           <dt>部門</dt><dd>{{ store.currentUser.dept }}</dd>
           <dt>直屬主管</dt><dd>{{ manager }}</dd>
         </dl>

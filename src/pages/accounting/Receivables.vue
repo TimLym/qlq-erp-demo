@@ -100,7 +100,7 @@ async function editPayAt(r: Row) {
       </div>
     </div>
     <div class="chips">
-      <button v-for="v in VIEWS" :key="v" type="button" class="chip" :class="{ on: view === v, hot: v === '逾期未收' }" @click="view = v">{{ v }}<span class="count">{{ all.filter((r) => match(r, v)).length }}</span></button>
+      <button v-for="v in VIEWS" :key="v" type="button" class="chip" :class="{ on: view === v }" :aria-pressed="view === v" @click="view = v">{{ v }}<span class="count">{{ all.filter((r) => match(r, v)).length }}</span></button>
       <span v-if="soFilter" class="tag slate so-filter">只看 {{ soFilter }} <a class="link" @click="soFilter = ''">清除</a></span>
     </div>
     <section class="panel">

@@ -239,7 +239,7 @@ function onBlur() {
               <span class="avatar" aria-hidden="true">{{ initials }}</span>
               <span class="who">
                 <span class="who-name">{{ store.currentUser.name }}</span>
-                <span class="who-role">{{ store.role }}<template v-if="store.actingAs">（代理）</template></span>
+                <span class="who-role">{{ store.roleLabel }}</span>
               </span>
               <el-icon class="chev"><ArrowDown /></el-icon>
             </button>
@@ -251,12 +251,12 @@ function onBlur() {
                 <el-dropdown-item command="settings" :icon="Setting">個人設定</el-dropdown-item>
                 <template v-if="store.switchableRoles.length">
                   <el-dropdown-item divided disabled :icon="Switch">切換角色</el-dropdown-item>
-                  <el-dropdown-item class="role-item" :class="{ on: !store.actingAs }" @click="store.switchRole(null)">{{ store.currentUser.role }}<span class="muted">本職</span></el-dropdown-item>
+                  <el-dropdown-item class="role-item" :class="{ on: !store.actingAs }" @click="store.switchRole(null)">{{ store.roleLabelOf(store.currentUser) }}<span class="muted">本職</span></el-dropdown-item>
                   <el-dropdown-item v-for="r in store.switchableRoles" :key="r.role + (r.forUserId ?? '')" class="role-item" :class="{ on: store.actingAs?.role === r.role && store.actingAs?.forUserId === r.forUserId }" @click="store.switchRole({ role: r.role, forUserId: r.forUserId, source: r.source })">{{ r.label }}<span class="muted">{{ r.source }}</span></el-dropdown-item>
                 </template>
                 <el-dropdown-item divided disabled :icon="SwitchButton">切換示範身分</el-dropdown-item>
                 <el-dropdown-item v-for="u in store.users" :key="u.id" class="persona-item" :class="{ on: u.id === store.currentUserId }" @click="store.switchUser(u.id)">
-                  {{ u.name }}<span class="muted">{{ u.role }}</span>
+                  {{ u.name }}<span class="muted">{{ store.roleLabelOf(u) }}</span>
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>

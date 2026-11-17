@@ -6,6 +6,7 @@ import { orders, engGroups, hasExpiryDate, isOrderClosed, type Deal, type EngReq
 import { useAppStore } from '../../stores/app'
 import { useJump } from '../../composables/useJump'
 import EngSupportCard from '../../components/EngSupportCard.vue'
+import { ArrowDown, ArrowRight } from '@element-plus/icons-vue'
 import { localToday } from '../../utils/format'
 
 /*
@@ -19,14 +20,9 @@ const route = useRoute()
 const router = useRouter()
 const { goSo, goDealNo, canSo, canDeal } = useJump()
 const canEdit = computed(() => store.can('/engineering/services', 'edit'))
-const me = computed(() => store.currentUserId)
-const myGroups = computed(() => engGroups.filter((g) => g.leaderId === me.value || g.memberIds.includes(me.value)).map((g) => g.id))
 
-/* 工程師只看派給自己或自己組（組長、組員）的服務單；工程主管、執行長看全部 */
-function mine(t: EngRequest) {
-  if (store.role !== '工程師') return true
-  return t.assigneeIds.includes(me.value) || (!!t.groupId && myGroups.value.includes(t.groupId))
-}
+/* 工程師只看派給自己的服務單；組長另看派給本組的（由組長再派人）；工程主管、執行長看全部 */
+const mine = (t: EngRequest) => store.canSeeTicket(t)
 const DONE = ['已完成', '已取消']
 type Case = { d: Deal; o?: Order; tickets: EngRequest[]; all: EngRequest[]; pendingStart: License[]; toClose: boolean; closed: boolean }
 const cases = computed<Case[]>(() =>
@@ -145,12 +141,12 @@ async function engClose(o: Order) {
       </div>
     </div>
     <div class="chips">
-      <button v-for="v in VIEWS" :key="v" type="button" class="chip" :class="{ on: view === v }" @click="view = v">{{ v }}<span class="count">{{ count(v) }}</span></button>
+      <button v-for="v in VIEWS" :key="v" type="button" class="chip" :class="{ on: view === v }" :aria-pressed="view === v" @click="view = v">{{ v }}<span class="count">{{ count(v) }}</span></button>
     </div>
     <section class="panel cases">
       <div v-for="c in rows" :key="c.d.id" class="case">
         <div class="case-head" role="button" tabindex="0" @click="openDealId = c.d.id" @keydown.enter="openDealId = c.d.id">
-          <button type="button" class="chev" :aria-label="collapsed.has(c.d.id) ? '展開' : '收合'" @click.stop="toggle(c.d.id)">{{ collapsed.has(c.d.id) ? '▸' : '▾' }}</button>
+          <button type="button" class="chev" :aria-label="collapsed.has(c.d.id) ? '展開' : '收合'" :aria-expanded="!collapsed.has(c.d.id)" @click.stop="toggle(c.d.id)"><el-icon :size="18"><ArrowRight v-if="collapsed.has(c.d.id)" /><ArrowDown v-else /></el-icon></button>
           <div class="who">
             <b>{{ c.d.customer }}</b> <span class="muted">{{ c.d.customerDept }}</span>
             <div class="muted small">
@@ -261,13 +257,25 @@ async function engClose(o: Order) {
 }
 
 .chev {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin: -4px 0 0 -6px;
   border: 0;
+  border-radius: 6px;
   background: transparent;
-  color: var(--muted);
-  font-size: 13px;
-  width: 20px;
-  padding: 2px 0;
+  color: var(--ink);
   cursor: pointer;
+}
+
+.chev:hover {
+  background: var(--surface-2);
+}
+
+.chev:focus-visible {
+  outline: 2px solid var(--teal);
 }
 
 .who {
@@ -292,8 +300,8 @@ async function engClose(o: Order) {
 }
 
 .t-no {
-  width: 64px;
-  padding-left: 44px;
+  width: 72px;
+  padding-left: 50px;
   color: var(--muted);
 }
 

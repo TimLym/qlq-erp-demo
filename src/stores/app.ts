@@ -257,7 +257,8 @@ export const useAppStore = defineStore('app', () => {
     if (r === '業務主管' && d.dept === currentUser.value.dept) return 'full'
     if (dealMembers.some((m) => m.dealId === d.id && m.userId === me)) return 'member'
     if (r === '工程主管' && (d.engRequests?.length ?? 0) > 0) return 'member'
-    if (r === '工程師' && (d.engRequests ?? []).some((t) => !!t.groupId && engGroups.some((g) => g.id === t.groupId && (g.leaderId === me || g.memberIds.includes(me))))) return 'member'
+    /* 派給組、還沒派人的服務單只給組長看（組長負責再派）；一般組員要被派到才看得到 */
+    if (r === '工程師' && (d.engRequests ?? []).some((t) => !!t.groupId && engGroups.some((g) => g.id === t.groupId && g.leaderId === me))) return 'member'
     return 'none'
   }
   const scopedDeals = computed(() => deals.filter((d) => accessOf(d) !== 'none'))
@@ -320,7 +321,10 @@ export const useAppStore = defineStore('app', () => {
   }
 
   /* 技術服務單：一個商機多張，各自派工；工程師派過就留在「工程支援人員」裡（完成後還能留言），只有改派或取消讓他沒有任何單才離開 */
-  const engRequestsOf = (d: Deal) => d.engRequests ?? []
+  /* 工程師看得到的服務單：派給自己的，或自己是組長、派給本組的；一般組員看不到本組還沒派人的單。其他角色照原本看全部 */
+  const canSeeTicket = (t: EngRequest) =>
+    role.value !== '工程師' || t.assigneeIds.includes(currentUserId.value) || (!!t.groupId && engGroups.some((g) => g.id === t.groupId && g.leaderId === currentUserId.value))
+  const engRequestsOf = (d: Deal) => (d.engRequests ?? []).filter(canSeeTicket)
   const shortNo = (t: EngRequest) => t.requestNo.slice(t.requestNo.lastIndexOf('-') + 1)
   function nextRequestNo(d: Deal) {
     const n = (d.engRequests ?? []).length + 1
@@ -777,6 +781,9 @@ export const useAppStore = defineStore('app', () => {
       .sort((a, b) => a.left - b.left),
   )
 
+  /* 顯示用的職稱：工程師兼組長稱「工程部組長」（權限仍照工程師；組長多的是再派本組服務單） */
+  const roleLabelOf = (u: { id: string; role: Role }) => (u.role === '工程師' && engGroups.some((g) => g.leaderId === u.id) ? '工程部組長' : u.role)
+  const roleLabel = computed(() => (actingAs.value ? `${role.value}（代理）` : roleLabelOf(currentUser.value)))
   function switchUser(id: string) {
     actingAs.value = null
     detail.value = null
@@ -1303,6 +1310,8 @@ export const useAppStore = defineStore('app', () => {
     canSeeMoney,
     canSeeOrderMoney,
     canActOn,
+    roleLabelOf,
+    roleLabel,
     detail,
     openDetail,
     closeDetail,
@@ -1341,6 +1350,7 @@ export const useAppStore = defineStore('app', () => {
     markMentionsRead,
     participantsOf,
     engRequestsOf,
+    canSeeTicket,
     requestBilling,
     issueInvoice,
     confirmPaid,

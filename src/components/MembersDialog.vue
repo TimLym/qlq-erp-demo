@@ -50,7 +50,7 @@ function confirm() {
       <ul class="people">
         <li v-for="u in candidates" :key="u.id" :class="{ disabled: isEngineer(u.role), on: picked.includes(u.id) }" @click="!isEngineer(u.role) && toggle(u.id)">
           <span class="avatar" :class="{ eng: isEngineer(u.role) }">{{ u.name.slice(0, 1) }}</span>
-          <span class="who"><b>{{ u.name }}</b><span class="muted small">{{ u.dept }} · {{ u.role }}</span></span>
+          <span class="who"><b>{{ u.name }}</b><span class="muted small">{{ u.dept }} · {{ store.roleLabelOf(u) }}</span></span>
           <span v-if="isEngineer(u.role)" class="muted small">須由工程主管派工</span>
           <el-checkbox v-else :model-value="picked.includes(u.id)" @click.stop @change="toggle(u.id)" />
         </li>

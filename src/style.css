@@ -609,3 +609,50 @@ body.rail-collapsed .deal-drawer-mask {
 .link:hover {
   text-decoration: underline;
 }
+
+/* 頁面上方的頁簽列（應收／開票、工程服務、到期項目）：目前所在頁簽實心標示 */
+.chips {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.chips > .chip {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.chips > .chip:hover {
+  border-color: var(--teal);
+}
+
+.chips > .chip:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.chips > .chip .count {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chips > .chip.on {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #fff;
+  font-weight: 600;
+}
+
+.chips > .chip.on .count {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}

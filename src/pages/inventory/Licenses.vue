@@ -69,10 +69,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.chips { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-.chip { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
-.chip.on { border-color: var(--teal); color: var(--teal); font-weight: 600; }
-.chip .count { margin-left: 6px; color: var(--muted); font-size: 12px; }
 .fixed { table-layout: fixed; }
 .c-cust { width: 26%; }
 .c-kind { width: 11%; }
