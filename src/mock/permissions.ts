@@ -7,8 +7,10 @@ import type { Role } from './data'
  * 只管「進不進得去這一頁、能不能在這頁做事」；看得到哪幾張單（資料範圍）與金額遮蔽另外由 store 判斷。
  * 預設值由原本 nav.ts 的角色設定轉成；系統管理「角色與權限」頁可改，儲存即生效並留異動紀錄。
  */
-export type PermLevel = 'none' | 'view' | 'edit'
-export const permLabel: Record<PermLevel, string> = { none: '無', view: '檢視', edit: '操作' }
+/** 明細：不在左欄、列表頁進不去，只能從其他頁點單號開那一張的抽屜（唯讀） */
+export type PermLevel = 'none' | 'link' | 'view' | 'edit'
+export const permLabel: Record<PermLevel, string> = { none: '無', link: '明細', view: '檢視', edit: '操作' }
+export const PERM_LEVELS: PermLevel[] = ['none', 'link', 'view', 'edit']
 
 export const ALL_ROLES: Role[] = ['業務', '業務主管', '業務最高主管', '執行長', '採購', '採購主管', '財務主管', '會計', '工程主管', '工程師', '系統管理員']
 
@@ -28,7 +30,9 @@ export const pageDefs: PageDef[] = navGroups.flatMap((g) =>
 
 /* 原本 nav.ts 允許、但只該「檢視」的組合 */
 const VIEW_ONLY: Record<string, Role[]> = {
-  '/sales/orders': ['採購', '工程主管', '工程師'],
+  '/sales/orders': ['採購'],
+  '/accounting/ar': ['執行長'],
+  '/engineering/services': ['執行長'],
   '/sales/customers': ['採購'],
   '/sales/performance': ['業務', '業務主管', '財務主管'],
   '/purchase/po': ['業務', '業務主管', '會計', '財務主管'],
@@ -36,6 +40,18 @@ const VIEW_ONLY: Record<string, Role[]> = {
   '/inventory': ['業務', '業務主管', '財務主管'],
   '/inventory/shipments': ['業務', '業務主管'],
   '/inventory/licenses': ['採購'],
+}
+/*
+ * 職能工作頁（2026-11-17）：會計、財務主管在應收／開票做事，工程在工程服務做事；
+ * 銷售訂單、商機對他們只開「明細」：從工作頁點單號看，左欄沒有列表。
+ */
+const LINK_ONLY: Record<string, Role[]> = {
+  '/sales/orders': ['會計', '財務主管', '工程主管', '工程師'],
+  '/sales/pipeline': ['工程主管', '工程師'],
+}
+/* 會計、財務主管不看 Pipeline（11/17 確認；現行系統會計對客戶只有檢視，商機階段與財務無關） */
+const NONE: Record<string, Role[]> = {
+  '/sales/pipeline': ['會計', '財務主管'],
 }
 /* 目前沒有人的角色（由代理人切換過去），預設比照相近的角色 */
 const LIKE: Partial<Record<Role, Role>> = { 採購主管: '採購', 業務最高主管: '業務主管' }
@@ -49,6 +65,8 @@ function navAllows(role: Role, path: string): boolean {
 function defaultLevel(role: Role, path: string): PermLevel {
   const base = LIKE[role] ?? role
   if (path === PERM_PAGE) return role === '執行長' || role === '系統管理員' ? 'edit' : 'none'
+  if (NONE[path]?.includes(base)) return 'none'
+  if (LINK_ONLY[path]?.includes(base)) return 'link'
   if (!navAllows(base, path)) return 'none'
   return VIEW_ONLY[path]?.includes(base) ? 'view' : 'edit'
 }

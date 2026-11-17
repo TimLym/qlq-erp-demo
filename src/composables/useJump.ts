@@ -10,8 +10,9 @@ import { useAppStore } from '../stores/app'
 export function useJump() {
   const router = useRouter()
   const store = useAppStore()
-  const canSo = computed(() => store.can('/sales/orders'))
-  const canDeal = computed(() => store.can('/sales/pipeline'))
+  /* 「明細」權限也能點：路由守門會在目前畫面開唯讀抽屜 */
+  const canSo = computed(() => store.can('/sales/orders', 'link'))
+  const canDeal = computed(() => store.can('/sales/pipeline', 'link'))
   const isSo = (ref: string) => {
     const v = ref.replace(/^預下單\s*/, '')
     return v.startsWith('SO-') || v.startsWith('PRE-')

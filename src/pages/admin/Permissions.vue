@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ALL_ROLES, pageDefs, permMatrix, permLog, permLabel, isLocked, type PermLevel } from '../../mock/permissions'
+import { ALL_ROLES, pageDefs, permMatrix, permLog, permLabel, isLocked, PERM_LEVELS, type PermLevel } from '../../mock/permissions'
 import type { Role } from '../../mock/data'
 import { useAppStore } from '../../stores/app'
 import { dateTime } from '../../utils/format'
@@ -22,12 +22,23 @@ const groups = computed(() => {
   pageDefs.forEach((p) => { if (!m.has(p.group)) m.set(p.group, []); m.get(p.group)!.push(p) })
   return [...m.entries()]
 })
-const LEVELS: PermLevel[] = ['none', 'view', 'edit']
-/* 點一格依序切換 無 → 檢視 → 操作 */
+/* 點一格依序切換 無 → 明細 → 檢視 → 操作 */
+const next = (cur: PermLevel) => PERM_LEVELS[(PERM_LEVELS.indexOf(cur) + 1) % PERM_LEVELS.length]!
 function cycle(r: Role, path: string) {
   if (!canEdit.value || isLocked(r, path)) return
-  const cur = draft.value[r][path] ?? 'none'
-  draft.value[r][path] = LEVELS[(LEVELS.indexOf(cur) + 1) % LEVELS.length]!
+  draft.value[r][path] = next(draft.value[r][path] ?? 'none')
+}
+/* 群組列＝現行系統的「模組」：一格代表整組，點一下整組一起換；組內不一致時顯示「混合」 */
+function groupLevel(r: Role, pages: typeof pageDefs): PermLevel | 'mixed' {
+  const lv = pages.filter((p) => !isLocked(r, p.path)).map((p) => draft.value[r][p.path] ?? 'none')
+  if (!lv.length) return 'mixed'
+  return lv.every((x) => x === lv[0]) ? lv[0]! : 'mixed'
+}
+function cycleGroup(r: Role, pages: typeof pageDefs) {
+  if (!canEdit.value) return
+  const cur = groupLevel(r, pages)
+  const to = cur === 'mixed' ? 'none' : next(cur)
+  pages.forEach((p) => { if (!isLocked(r, p.path)) draft.value[r][p.path] = to })
 }
 function save() {
   let n = 0
@@ -58,7 +69,7 @@ const pageLabel = (path: string) => pageDefs.find((p) => p.path === path)?.label
       </div>
     </div>
     <div class="legend">
-      <span class="cell edit">操作</span><span class="cell view">檢視</span><span class="cell none">無</span>
+      <span class="cell edit">操作</span><span class="cell view">檢視</span><span class="cell link">明細</span><span class="cell none">無</span>
     </div>
     <section class="panel matrix-wrap">
       <table class="matrix">
@@ -70,7 +81,20 @@ const pageLabel = (path: string) => pageDefs.find((p) => p.path === path)?.label
         </thead>
         <tbody>
           <template v-for="[g, pages] in groups" :key="g">
-            <tr class="group-row"><td :colspan="ALL_ROLES.length + 1">{{ g }}</td></tr>
+            <tr class="group-row">
+              <td class="page-col">{{ g }}</td>
+              <td v-for="r in ALL_ROLES" :key="r" class="c">
+                <button
+                  v-if="pages.length > 1"
+                  type="button"
+                  class="cell group"
+                  :class="groupLevel(r, pages)"
+                  :disabled="!canEdit"
+                  :aria-label="`${r}・${g} 整組`"
+                  @click="cycleGroup(r, pages)"
+                >{{ groupLevel(r, pages) === 'mixed' ? '混合' : permLabel[groupLevel(r, pages) as PermLevel] }}</button>
+              </td>
+            </tr>
             <tr v-for="p in pages" :key="p.path">
               <td class="page-col">{{ p.label }}</td>
               <td v-for="r in ALL_ROLES" :key="r" class="c">
@@ -182,6 +206,24 @@ const pageLabel = (path: string) => pageDefs.find((p) => p.path === path)?.label
   background: var(--paper);
   color: var(--ink);
   border-color: var(--line);
+}
+
+.cell.link {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line);
+  border-style: dashed;
+}
+
+.cell.mixed {
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--line);
+  border-style: dotted;
+}
+
+.cell.group {
+  font-weight: 600;
 }
 
 .cell.none {

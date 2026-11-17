@@ -11,7 +11,7 @@ const router = useRouter()
 const from = computed(() => (typeof route.query.from === 'string' ? route.query.from : ''))
 const page = computed(() => pageOf(from.value.split('?')[0] ?? ''))
 /* 切換到可代理的角色就能進的話，提示切換 */
-const viaSwitch = computed(() => (page.value ? store.switchableRoles.find((x) => (permMatrix[x.role]?.[page.value!.path] ?? 'none') !== 'none') : undefined))
+const viaSwitch = computed(() => (page.value ? store.switchableRoles.find((x) => ['view', 'edit'].includes(permMatrix[x.role]?.[page.value!.path] ?? 'none')) : undefined))
 function switchAndGo() {
   const t = viaSwitch.value
   if (!t) return

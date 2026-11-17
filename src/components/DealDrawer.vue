@@ -54,7 +54,7 @@ const canSeeMoney = computed(() => !!deal.value && store.canSeeMoney(deal.value)
 const frozen = computed(() => deal.value?.stage === 'SO已成立')
 /* 頁面權限：Pipeline 只有「檢視」時，抽屜裡的編輯、報價、轉單、成員管理都不開 */
 const canOperatePage = computed(() => store.can('/sales/pipeline', 'edit'))
-const canOrdersPage = computed(() => store.can('/sales/orders'))
+const canOrdersPage = computed(() => store.can('/sales/orders', 'link'))
 const canManageMembers = computed(() => !!deal.value && !frozen.value && canOperatePage.value && store.canManageMembers(deal.value))
 const members = computed(() => (deal.value ? store.membersOf(deal.value.id) : []))
 const collaborators = computed(() => members.value.filter((m) => m.kind === '協作成員'))

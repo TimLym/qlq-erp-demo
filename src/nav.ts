@@ -110,7 +110,7 @@ export const navGroups: NavGroup[] = [
     phase: 2,
     roles: ['業務主管', '執行長', '工程主管', '工程師', '系統管理員'],
     items: [
-      { label: '派工與指派', path: '/engineering/dispatch', notes: ['工程主管派工、多點施工追蹤'] },
+      { roles: ['工程主管', '工程師', '執行長'], label: '工程服務', path: '/engineering/services', ready: true },
       { label: '專案協作', path: '/engineering/collab', notes: ['專案看板、交辦事項、會議決議追蹤', '現行系統的內部協作、內部會議、專案管理板歸入此處'] },
       { label: '客戶入口', path: '/engineering/portal', notes: ['客戶註冊裝置、授權查詢'] },
     ],
@@ -123,7 +123,8 @@ export const navGroups: NavGroup[] = [
     roles: ['財務主管', '會計', '執行長', '系統管理員'],
     items: [
       { label: '傳票與日記賬', path: '/accounting/vouchers', notes: ['自動生成、連結憑證附件'] },
-      { label: '應收應付', path: '/accounting/ar-ap', notes: ['收款沖帳、付款作業'] },
+      { roles: ['會計', '財務主管', '執行長'], label: '應收／開票', path: '/accounting/ar', ready: true },
+      { label: '應付與付款', path: '/accounting/ap', notes: ['付款作業、應付憑單', '預付款核對同公司、同商機、同廠商、同 PO'] },
       { label: '銀行對帳與借款', path: '/accounting/bank', notes: ['銀行 API 交易明細、借款額度與撥款'] },
       { label: '電子發票', path: '/accounting/einvoice', notes: ['開立與作廢'] },
     ],

@@ -7,6 +7,8 @@ import { useAppStore } from '../stores/app'
 import { purchaseOrders } from '../mock/data'
 import NotifyBell from '../components/NotifyBell.vue'
 import ImportantCards from '../components/ImportantCards.vue'
+import SoDrawer from '../components/SoDrawer.vue'
+import DealDrawer from '../components/DealDrawer.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -265,6 +267,9 @@ function onBlur() {
         <RouterView :key="viewKey" />
       </main>
       <ImportantCards />
+      <!-- 只有「明細」權限的角色點單號時，在目前畫面開唯讀抽屜 -->
+      <SoDrawer :order-id="store.detail?.kind === 'so' ? store.detail.id : null" @close="store.closeDetail('so', store.detail?.kind === 'so' ? store.detail.id : null)" />
+      <DealDrawer :deal-id="store.detail?.kind === 'deal' ? store.detail.id : null" :initial-tab="store.detail?.kind === 'deal' ? store.detail.tab : undefined" @close="store.closeDetail('deal', store.detail?.kind === 'deal' ? store.detail.id : null)" @open="(id: string) => store.openDetail('deal', id)" />
     </div>
   </div>
 </template>

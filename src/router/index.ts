@@ -34,6 +34,8 @@ const router = createRouter({
     { path: '/admin/expiry-kinds', component: () => import('../pages/admin/ExpiryKinds.vue'), meta: { title: '到期類型' } },
     { path: '/admin/own-services', component: () => import('../pages/admin/OwnServices.vue'), meta: { title: '自有服務項目' } },
     { path: '/admin/permissions', component: () => import('../pages/admin/Permissions.vue'), meta: { title: '角色與權限' } },
+    { path: '/accounting/ar', component: () => import('../pages/accounting/Receivables.vue'), meta: { title: '應收／開票' } },
+    { path: '/engineering/services', component: () => import('../pages/engineering/Services.vue'), meta: { title: '工程服務' } },
     { path: '/denied', component: () => import('../pages/Denied.vue'), meta: { title: '沒有權限' } },
     { path: '/:pathMatch(.*)*', component: () => import('../pages/Planned.vue'), meta: { title: '規劃中' } },
   ],
@@ -41,10 +43,18 @@ const router = createRouter({
 })
 
 /* 守門：這個角色沒有這一頁的檢視權限就到「沒有權限」頁（外部頁不管） */
-router.beforeEach((to) => {
+router.beforeEach((to, from) => {
   if (to.meta.ext || to.path === '/denied') return true
   const store = useAppStore()
   if (store.can(to.path)) return true
+  /* 只有「明細」權限：點 SO／商機單號不換頁，在目前畫面開唯讀抽屜 */
+  if (store.can(to.path, 'link')) {
+    const so = typeof to.query.so === 'string' ? to.query.so : ''
+    const deal = typeof to.query.deal === 'string' ? to.query.deal : ''
+    const tab = typeof to.query.tab === 'string' ? to.query.tab : undefined
+    const opened = to.path === '/sales/orders' && so ? store.openDetail('so', so) : to.path === '/sales/pipeline' && deal ? store.openDetail('deal', deal, tab) : false
+    if (opened) return from.matched.length ? false : '/'
+  }
   return { path: '/denied', query: { from: to.fullPath } }
 })
 

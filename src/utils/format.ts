@@ -32,3 +32,8 @@ export function dateTime(iso: string): string {
   const ss = String(d.getSeconds()).padStart(2, '0')
   return `${dateFull(iso)} ${hh}:${mi}:${ss}`
 }
+
+/** 本地（台北）日期 YYYY-MM-DD；不用 toISOString，避免凌晨取到 UTC 前一天 */
+export function localToday(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}

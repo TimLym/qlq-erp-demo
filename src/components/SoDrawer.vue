@@ -46,7 +46,6 @@ const tab = ref<Tab>('lines')
 /* 頁面權限：銷售訂單只有「檢視」時，商務、財務動作都不開；工程動作（起算、結案）仍依派工關係 */
 const canOperatePage = computed(() => store.can('/sales/orders', 'edit'))
 const canShipPage = computed(() => store.can('/inventory/shipments', 'edit'))
-const isFinance = computed(() => canOperatePage.value && ['會計', '財務主管', '執行長'].includes(store.role))
 const seeMoney = computed(() => !!o.value && store.canSeeOrderMoney(o.value))
 const showTab = computed<Record<Tab, boolean>>(() => {
   const r = store.role
@@ -65,7 +64,7 @@ const showDealLink = computed(() => !['會計', '財務主管'].includes(store.r
 /* 跨頁連結：角色沒有目標頁的檢視權限就不給點 */
 const canLicensesPage = computed(() => store.can('/inventory/licenses'))
 const canPoPage = computed(() => store.can('/purchase/po'))
-const canDealPage = computed(() => store.can('/sales/pipeline'))
+const canDealPage = computed(() => store.can('/sales/pipeline', 'link'))
 watch(() => props.orderId, () => {
   tab.value = 'lines'
 })
@@ -320,28 +319,17 @@ function onResigned(orderId: string, shipmentId: string, method: string, file: s
   ElMessage.success(`${s.shipNo} 已重新簽收（${method}）`)
 }
 
-/* 請款：通知開票（BillingRequestDialog）→ 會計開票（填發票號碼）→ 收款入帳（示範，正式版由三期沖帳） */
-async function issueInvoice(i: number) {
-  const x = o.value
-  if (!x) return
-  const { value } = await ElMessageBox.prompt('發票號碼', `開立發票｜${x.soNo} 第 ${i + 1} 期 ${x.milestones[i]!.label}`, { inputValue: 'AB-', inputPlaceholder: '例：AB-12345678', confirmButtonText: '已開立', cancelButtonText: '取消', inputValidator: (v) => /^[A-Z]{2}-\d{8}$/.test(v.trim()) || '格式：兩碼英文加 8 碼數字' }).catch(() => ({ value: '' }))
-  if (!value) return
-  store.issueInvoice(x, i, value.trim())
-  ElMessage.success(`第 ${i + 1} 期發票已開立，業務會收到通知`)
-}
-async function confirmPaid(i: number) {
-  const x = o.value
-  if (!x) return
-  const ok = await ElMessageBox.confirm(`確認第 ${i + 1} 期 ${x.milestones[i]!.label} 已收款？正式版由三期收款沖帳自動推進。`, '收款入帳', { confirmButtonText: '已收款', cancelButtonText: '取消' }).then(() => true, () => false)
-  if (!ok) return
-  store.confirmPaid(x, i)
-  ElMessage.success(isOrderClosed(x) ? '已收款，執行與財務都完成，訂單結案' : '已收款，業務會收到通知')
+/* 請款：業務在這裡通知開票；開立發票、收款入帳在「應收／開票」頁（會計、財務主管） */
+const canArPage = computed(() => store.can('/accounting/ar', 'edit'))
+function goAr(soNo: string) {
+  router.push({ path: '/accounting/ar', query: { so: soNo } })
+  emit('close')
 }
 
 /* 請款條件：負責業務、業務主管、財務主管、會計、執行長可改；結案後不行；已請款的期數在編輯器裡鎖定 */
 const msEditing = ref(false)
 const msDraft = ref<Milestone[]>([])
-const canEditMs = computed(() => !!o.value && canOperatePage.value && !closed.value && (['業務主管', '財務主管', '會計', '執行長'].includes(store.role) || (store.role === '業務' && o.value.owner === store.currentUser.name)))
+const canEditMs = computed(() => !!o.value && canOperatePage.value && !closed.value && (['業務主管', '執行長'].includes(store.role) || (store.role === '業務' && o.value.owner === store.currentUser.name)))
 function editMs() {
   if (!o.value) return
   msDraft.value = o.value.milestones.map((m) => ({ ...m }))
@@ -526,8 +514,7 @@ async function renewFromSo() {
                   </td>
                   <td class="acts">
                     <el-button v-if="r.m.status === '待請款' && canOps" size="small" type="primary" @click="billing = { order: o, index: r.i }">通知開票</el-button>
-                    <el-button v-else-if="r.m.status === '已申請' && isFinance" size="small" type="primary" @click="issueInvoice(r.i)">開立發票</el-button>
-                    <el-button v-else-if="r.m.status === '已開票' && isFinance" size="small" @click="confirmPaid(r.i)">收款入帳</el-button>
+                    <el-button v-else-if="(r.m.status === '已申請' || r.m.status === '已開票') && canArPage" size="small" type="primary" plain @click="goAr(o.soNo)">到應收處理</el-button>
                     <span v-else-if="r.m.status === '已申請'" class="muted small">等會計開票</span>
                     <span v-else-if="r.m.status === '已開票'" class="muted small">等客戶付款</span>
                   </td>

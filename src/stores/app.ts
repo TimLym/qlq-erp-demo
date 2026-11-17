@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { routing } from '../mock/routing'
-import { permMatrix, permLog, pageOf, isLocked, type PermLevel } from '../mock/permissions'
+import { permMatrix, permLog, pageOf, isLocked, PERM_LEVELS, type PermLevel } from '../mock/permissions'
 import { computed, ref } from 'vue'
 import { applyTheme, readSavedTheme, type ThemeId } from '../theme'
 import {
@@ -132,6 +132,7 @@ export const useAppStore = defineStore('app', () => {
   })
   function switchRole(target: { role: Role; forUserId?: string; source: '簽核代理' | '請假代理' } | null) {
     if (target && !switchableRoles.value.some((x) => x.role === target.role && x.forUserId === target.forUserId)) return
+    detail.value = null
     actingAs.value = target
   }
   /* 頁面權限：矩陣裡這一頁的等級；不在導覽裡的頁（通知中心、個人設定、外部頁）不受管 */
@@ -139,7 +140,27 @@ export const useAppStore = defineStore('app', () => {
     const page = pageOf(path.split('?')[0]!)
     if (!page || isLocked(role.value, page.path)) return true
     const lv = permMatrix[role.value]?.[page.path] ?? 'none'
-    return level === 'view' ? lv !== 'none' : lv === 'edit'
+    return PERM_LEVELS.indexOf(lv) >= PERM_LEVELS.indexOf(level)
+  }
+  /*
+   * 全域明細抽屜：只有「明細」權限的角色（會計看 SO、工程看商機與 SO）點單號時不換頁，
+   * 由 AppShell 在目前畫面開抽屜。只開資料範圍內的單。
+   */
+  const detail = ref<{ kind: 'so'; id: string } | { kind: 'deal'; id: string; tab?: 'basic' | 'quotes' | 'comments' | 'files' } | null>(null)
+  function openDetail(kind: 'so' | 'deal', key: string, tab?: string): boolean {
+    if (kind === 'so') {
+      const o = scopedOrders.value.find((x) => x.soNo === key || x.id === key)
+      if (!o) return false
+      detail.value = { kind: 'so', id: o.id }
+      return true
+    }
+    const d = scopedDeals.value.find((x) => x.id === key || x.dealNo === key)
+    if (!d) return false
+    detail.value = { kind: 'deal', id: d.id, tab: (['basic', 'quotes', 'comments', 'files'] as const).find((t) => t === tab) }
+    return true
+  }
+  function closeDetail(kind: 'so' | 'deal', id: string | null) {
+    if (detail.value && detail.value.kind === kind && detail.value.id === id) detail.value = null
   }
   function setPermission(r: Role, path: string, to: PermLevel) {
     if (!['執行長', '系統管理員'].includes(role.value) || isLocked(r, path)) return
@@ -236,6 +257,7 @@ export const useAppStore = defineStore('app', () => {
     if (r === '業務主管' && d.dept === currentUser.value.dept) return 'full'
     if (dealMembers.some((m) => m.dealId === d.id && m.userId === me)) return 'member'
     if (r === '工程主管' && (d.engRequests?.length ?? 0) > 0) return 'member'
+    if (r === '工程師' && (d.engRequests ?? []).some((t) => !!t.groupId && engGroups.some((g) => g.id === t.groupId && (g.leaderId === me || g.memberIds.includes(me))))) return 'member'
     return 'none'
   }
   const scopedDeals = computed(() => deals.filter((d) => accessOf(d) !== 'none'))
@@ -329,10 +351,10 @@ export const useAppStore = defineStore('app', () => {
     todos.value = todos.value.filter((x) => !(x.kind === '派工' && x.engRequestId === t.id))
     const g = groupOf(t)
     if (g) {
-      todos.value.unshift({ id: `t-${Date.now()}-${t.id}-g`, kind: '派工', title: `待派工（${g.name}）${shortNo(t)}｜${t.type}｜${d.customer} ${t.title}`, refNo: d.dealNo, due: t.dueDate, forRoles: ['工程師'], forUserIds: [g.leaderId], dealId: d.id, engRequestId: t.id, route: `/sales/pipeline?deal=${d.id}`, createdAt: new Date().toISOString() })
+      todos.value.unshift({ id: `t-${Date.now()}-${t.id}-g`, kind: '派工', title: `待派工（${g.name}）${shortNo(t)}｜${t.type}｜${d.customer} ${t.title}`, refNo: d.dealNo, due: t.dueDate, forRoles: ['工程師'], forUserIds: [g.leaderId], dealId: d.id, engRequestId: t.id, route: `/engineering/services?deal=${d.id}`, createdAt: new Date().toISOString() })
       return
     }
-    todos.value.unshift({ id: `t-${Date.now()}-${t.id}`, kind: '派工', title: `${t.urgent ? '【急件】' : ''}待派工 ${shortNo(t)}｜${t.type}｜${d.customer} ${t.title}`, refNo: d.dealNo, due: t.dueDate, forRoles: ['工程主管'], dealId: d.id, engRequestId: t.id, route: `/sales/pipeline?deal=${d.id}`, createdAt: new Date().toISOString() })
+    todos.value.unshift({ id: `t-${Date.now()}-${t.id}`, kind: '派工', title: `${t.urgent ? '【急件】' : ''}待派工 ${shortNo(t)}｜${t.type}｜${d.customer} ${t.title}`, refNo: d.dealNo, due: t.dueDate, forRoles: ['工程主管'], dealId: d.id, engRequestId: t.id, route: `/engineering/services?deal=${d.id}`, createdAt: new Date().toISOString() })
     notifications.value.unshift({ id: `n-${Date.now()}-${t.id}`, kind: '派工', text: `${currentUser.value.name} 開了服務單 ${shortNo(t)}「${t.type}｜${d.customer} ${t.title}」，需求日期 ${t.dueDate}`, at: new Date().toISOString(), read: false, forRoles: ['工程主管'] })
   }
   function requestEngineering(d: Deal, form: { type: EngRequest['type']; title: string; desc: string; dueDate: string; urgent: boolean; suggestedId?: string; suggestReason?: string }) {
@@ -377,7 +399,7 @@ export const useAppStore = defineStore('app', () => {
     const now = new Date().toISOString()
     t.acceptedIds = [...new Set([...(t.acceptedIds ?? []), me])]
     todos.value = todos.value.filter((x) => !(x.kind === '工程' && x.engRequestId === t.id && x.forUserIds?.includes(me)))
-    todos.value.unshift({ id: `t-${Date.now()}-${t.id}-${me}-ok`, kind: '工程', title: `工程支援 ${shortNo(t)}｜${t.type}｜${d.customer} ${t.title}`, refNo: d.dealNo, due: t.dueDate, forRoles: ['工程師'], forUserIds: [me], dealId: d.id, engRequestId: t.id, route: `/sales/pipeline?deal=${d.id}`, createdAt: now })
+    todos.value.unshift({ id: `t-${Date.now()}-${t.id}-${me}-ok`, kind: '工程', title: `工程支援 ${shortNo(t)}｜${t.type}｜${d.customer} ${t.title}`, refNo: d.dealNo, due: t.dueDate, forRoles: ['工程師'], forUserIds: [me], dealId: d.id, engRequestId: t.id, route: `/engineering/services?deal=${d.id}`, createdAt: now })
     if (t.assigneeIds.every((id) => t.acceptedIds!.includes(id))) t.status = '已派工'
     if (t.assignedById) notifications.value.unshift({ id: `n-${Date.now()}-acc`, kind: '派工', text: `${currentUser.value.name} 已接受 ${shortNo(t)}「${t.type}｜${d.customer} ${t.title}」`, at: now, read: false, forRoles: ['工程主管', '工程師'], forUserIds: [t.assignedById] })
     comments.value.push({ id: `c-${Date.now()}`, dealId: d.id, author: currentUser.value.name, role: role.value, at: now, text: `接受 ${shortNo(t)}` })
@@ -409,7 +431,7 @@ export const useAppStore = defineStore('app', () => {
       if (!u) return
       names.push(u.name)
       if (!prev.includes(id)) {
-        todos.value.unshift({ id: `t-${Date.now()}-${t.id}-${id}`, kind: '工程', title: `待接受 ${shortNo(t)}｜${t.type}｜${d.customer} ${t.title}`, refNo: d.dealNo, due: t.dueDate, forRoles: ['工程師'], forUserIds: [id], dealId: d.id, engRequestId: t.id, route: `/sales/pipeline?deal=${d.id}`, createdAt: now })
+        todos.value.unshift({ id: `t-${Date.now()}-${t.id}-${id}`, kind: '工程', title: `待接受 ${shortNo(t)}｜${t.type}｜${d.customer} ${t.title}`, refNo: d.dealNo, due: t.dueDate, forRoles: ['工程師'], forUserIds: [id], dealId: d.id, engRequestId: t.id, route: `/engineering/services?deal=${d.id}`, createdAt: now })
         notifications.value.unshift({ id: `n-${Date.now()}-${t.id}-${id}`, kind: '派工', text: `${currentUser.value.name} 指派你負責 ${shortNo(t)}「${t.type}｜${d.customer} ${t.title}」，需求日期 ${t.dueDate}`, at: now, read: false, forRoles: ['工程師'], forUserIds: [id] })
       }
     })
@@ -678,8 +700,20 @@ export const useAppStore = defineStore('app', () => {
     m.status = '已申請'
     m.requestedAt = now.toISOString().slice(0, 10)
     logOrder(o, '財務', `第 ${idx + 1} 期「${m.label}」申請請款`)
-    todos.value.unshift({ id: `t-${now.getTime()}-inv`, kind: '付款', title: `開立發票：${o.customer} ${o.soNo} 第 ${idx + 1} 期 ${m.label}（${m.amount.toLocaleString()}）`, refNo: o.soNo, due: new Date(now.getTime() + 3 * 86400000).toISOString().slice(0, 10), forRoles: ['會計'], route: '/sales/orders', createdAt: now.toISOString() })
+    todos.value.unshift({ id: `t-${now.getTime()}-inv`, kind: '付款', title: `開立發票：${o.customer} ${o.soNo} 第 ${idx + 1} 期 ${m.label}（${m.amount.toLocaleString()}）`, refNo: o.soNo, due: new Date(now.getTime() + 3 * 86400000).toISOString().slice(0, 10), forRoles: ['會計'], route: '/accounting/ar', createdAt: now.toISOString() })
     notifications.value.unshift({ id: `n-${now.getTime()}-inv`, kind: '系統', text: `${currentUser.value.name} 申請請款：${o.customer} ${o.soNo} 第 ${idx + 1} 期 ${m.label}`, at: now.toISOString(), read: false, forRoles: ['會計', '財務主管'] })
+  }
+  function returnBilling(o: Order, idx: number, reason: string): boolean {
+    const m = o.milestones[idx]
+    if (!m || m.status !== '已申請' || !reason.trim() || !can('/accounting/ar', 'edit')) return false
+    const now = new Date()
+    m.status = '待請款'
+    m.requestedAt = undefined
+    logOrder(o, '財務', `第 ${idx + 1} 期「${m.label}」請款退回：${reason.trim()}`)
+    todos.value = todos.value.filter((t) => !(t.kind === '付款' && t.refNo === o.soNo && t.title.includes(`第 ${idx + 1} 期`)))
+    const owner = users.find((u) => u.name === o.owner)
+    notifications.value.unshift({ id: `n-${now.getTime()}-billback`, kind: '退回', text: `${currentUser.value.name} 退回請款：${o.customer} ${o.soNo} 第 ${idx + 1} 期 ${m.label}（${reason.trim()}）`, at: now.toISOString(), read: false, forUserIds: owner ? [owner.id] : undefined, forRoles: ['業務'] })
+    return true
   }
   function issueInvoice(o: Order, idx: number, invoiceNo: string) {
     const m = o.milestones[idx]
@@ -745,6 +779,7 @@ export const useAppStore = defineStore('app', () => {
 
   function switchUser(id: string) {
     actingAs.value = null
+    detail.value = null
     currentUserId.value = id
     remindDays.value = readJson(`erp.remind.${id}`, {})
     favorites.value = readJson(`erp.fav.${id}`, [])
@@ -774,6 +809,8 @@ export const useAppStore = defineStore('app', () => {
   function notifyTarget(n: Notification): string {
     if (n.approvalId) return `/approvals/mine?open=${n.approvalId}`
     const c = notifyCat(n)
+    if (c === '訂單與財務' && can('/accounting/ar') && !can('/sales/orders')) return '/accounting/ar'
+    if (c === '工程' && can('/engineering/services') && !can('/sales/pipeline')) return '/engineering/services'
     return c === '簽核' ? '/approvals/mine' : c === '訂單與財務' ? '/sales/orders' : c === '工程' ? '/sales/pipeline' : '/notifications'
   }
   /* 重要通知卡：按「知道了」或「去處理」就不再出現（依身分各自記，這次開啟有效） */
@@ -1266,6 +1303,10 @@ export const useAppStore = defineStore('app', () => {
     canSeeMoney,
     canSeeOrderMoney,
     canActOn,
+    detail,
+    openDetail,
+    closeDetail,
+    returnBilling,
     actingAs,
     switchableRoles,
     switchRole,
